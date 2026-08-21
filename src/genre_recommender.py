@@ -202,6 +202,148 @@ def rerank_for_diversity(
 
     return selected
 
+def score_movies_by_genre(
+    user_id: int,
+    user_history: pd.DataFrame,
+    reference_ratings: pd.DataFrame,
+    movies: pd.DataFrame,
+    movie_ids: list[int],
+    recency_half_life_years: float = 4.0,
+    year_penalty_per_year: float = 0.005,
+    minimum_year_weight: float = 0.50,
+    confidence_prior: float = 5.0,
+    quality_weight: float = 0.20,
+) -> list[Recommendation]:
+    prepared_movies = prepare_movie_data(movies)
+    quality = calculate_movie_quality(reference_ratings)
+
+    history = (
+        user_history.loc[user_history["userId"] == user_id]
+        .merge(prepared_movies, on="movieId", how="inner")
+        .copy()
+    )
+
+    if history.empty:
+        raise ValueError(f"User {user_id} has no ratings")
+
+    history["recency_weight"] = calculate_recency_weights(
+        history["timestamp"],
+        recency_half_life_years,
+    )
+
+    user_average = float(
+        np.average(
+            history["rating"],
+            weights=history["recency_weight"],
+        )
+    )
+
+    global_average = float(reference_ratings["rating"].mean())
+
+    genre_history: dict[str, pd.DataFrame] = {}
+
+    for genre in {
+        genre
+        for genres in history["genre_list"]
+        for genre in genres
+    }:
+        genre_history[genre] = history.loc[
+            history["genre_list"].map(lambda genres: genre in genres)
+        ]
+
+    candidates = (
+        prepared_movies.loc[
+            prepared_movies["movieId"].isin(movie_ids)
+        ]
+        .merge(quality, on="movieId", how="left")
+        .dropna(subset=["quality_rating"])
+    )
+
+    results: list[Recommendation] = []
+
+    for candidate in candidates.itertuples(index=False):
+        genre_details: list[tuple[str, float, float]] = []
+
+        for genre in candidate.genre_list:
+            matching_history = genre_history.get(genre)
+
+            if matching_history is None or matching_history.empty:
+                continue
+
+            year_weights = calculate_year_weights(
+                matching_history["release_year"].to_numpy(dtype=float),
+                float(candidate.release_year),
+                year_penalty_per_year,
+                minimum_year_weight,
+            )
+
+            combined_weights = (
+                matching_history["recency_weight"].to_numpy(dtype=float)
+                * year_weights
+            )
+
+            evidence = float(combined_weights.sum())
+
+            if evidence <= 0:
+                continue
+
+            weighted_genre_average = float(
+                np.average(
+                    matching_history["rating"],
+                    weights=combined_weights,
+                )
+            )
+
+            confidence = evidence / (evidence + confidence_prior)
+
+            preference = (
+                weighted_genre_average - user_average
+            ) * confidence
+
+            genre_details.append(
+                (genre, preference, confidence)
+            )
+
+        if genre_details:
+            personal_score = float(
+                np.mean(
+                    [
+                        preference
+                        for _, preference, _ in genre_details
+                    ]
+                )
+            )
+        else:
+            personal_score = 0.0
+
+        quality_score = float(
+            candidate.quality_rating - global_average
+        )
+
+        predicted_rating = float(
+            np.clip(
+                user_average
+                + personal_score
+                + quality_weight * quality_score,
+                0.5,
+                5.0,
+            )
+        )
+
+        results.append(
+            Recommendation(
+                movie_id=int(candidate.movieId),
+                title=candidate.title,
+                genres=candidate.genres,
+                predicted_rating=predicted_rating,
+                personal_score=personal_score,
+                quality_score=quality_score,
+                explanation=build_explanation(genre_details),
+            )
+        )
+
+    return results
+
 
 def recommend_by_genre(
     user_id: int,

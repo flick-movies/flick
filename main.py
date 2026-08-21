@@ -1,34 +1,32 @@
-from src.genre_recommender import recommend_by_genre
 from src.load_data import load_movielens
+from src.ml_reranker import (
+    build_training_dataset,
+    train_ranker,
+)
 
 
 def main() -> None:
     ratings, movies = load_movielens("data")
 
-    user_id = 106
-
-    recommendations = recommend_by_genre(
-        user_id=user_id,
+    X, y, users_used = build_training_dataset(
         ratings=ratings,
         movies=movies,
-        limit=5,
     )
 
-    print(f"Top recommendations for User {user_id}:\n")
+    print("Users used:", users_used)
+    print("Training examples:", len(X))
+    print("Feature matrix shape:", X.shape)
 
-    for position, recommendation in enumerate(
-        recommendations,
-        start=1,
-    ):
-        print(
-            f"{position}. {recommendation.title}\n"
-            f"   Genres: {recommendation.genres}\n"
-            f"   Predicted rating: "
-            f"{recommendation.predicted_rating:.2f}/5\n"
-            f"   Personal genre score: "
-            f"{recommendation.personal_score:+.3f}\n"
-            f"   {recommendation.explanation}\n"
-        )
+    print("Positive labels:", int(y.sum()))
+    print("Negative labels:", int(len(y) - y.sum()))
+
+    ranker = train_ranker(X, y)
+
+    print()
+    print("Learned coefficients:")
+    print("Personal score:", ranker.model.coef_[0][0])
+    print("Quality score:", ranker.model.coef_[0][1])
+    print("Popularity:", ranker.model.coef_[0][2])
 
 
 if __name__ == "__main__":
