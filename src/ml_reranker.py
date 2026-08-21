@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+import joblib
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
@@ -224,3 +225,144 @@ def build_training_dataset(
     y = np.concatenate(all_labels)
 
     return X, y, users_used
+
+def score_with_ranker(
+    features: MovieFeatures,
+    ranker: TrainedRanker,
+) -> float:
+    X = features.as_array().reshape(1, -1)
+
+    X_scaled = ranker.scaler.transform(X)
+
+    score = ranker.model.decision_function(X_scaled)[0]
+
+    return float(score)
+
+def rerank_candidates_with_ml(
+    candidates,
+    popularity: dict[int, float],
+    ranker: TrainedRanker,
+):
+    scored = []
+
+    for movie in candidates:
+        features = MovieFeatures(
+            personal_score=movie.personal_score,
+            quality_score=movie.quality_score,
+            popularity=popularity[movie.movie_id],
+        )
+
+        ml_score = score_with_ranker(
+            features=features,
+            ranker=ranker,
+        )
+
+        scored.append((movie, ml_score))
+
+    scored.sort(
+        key=lambda item: item[1],
+        reverse=True,
+    )
+
+    return scored
+
+def save_ranker(
+    ranker: TrainedRanker,
+    path: str = "src/models/ml_reranker.joblib"
+) -> None:
+    joblib.dump(ranker, path)
+
+
+def load_ranker(
+    path: str = "src/models/ml_reranker.joblib"
+) -> TrainedRanker:
+    return joblib.load(path)
+
+@dataclass(frozen=True)
+class MLRerankedRecommendation:
+    movie_id: int
+    title: str
+    genres: str
+    ml_score: float
+    personal_score: float
+    quality_score: float
+    popularity: float
+
+
+def recommend_with_ml(
+    user_id: int,
+    ratings: pd.DataFrame,
+    movies: pd.DataFrame,
+    limit: int = 5,
+) -> list[MLRerankedRecommendation]:
+    ranker = load_ranker()
+
+    user_history = ratings.loc[
+        ratings["userId"] == user_id
+    ].copy()
+
+    if user_history.empty:
+        raise ValueError(f"User {user_id} has no ratings")
+
+    watched_ids = set(
+        user_history["movieId"].astype(int)
+    )
+
+    unseen_movie_ids = (
+        movies.loc[
+            ~movies["movieId"].isin(watched_ids),
+            "movieId",
+        ]
+        .astype(int)
+        .tolist()
+    )
+
+    scored_movies = score_movies_by_genre(
+        user_id=user_id,
+        user_history=user_history,
+        reference_ratings=ratings,
+        movies=movies,
+        movie_ids=unseen_movie_ids,
+    )
+
+    popularity = calculate_movie_popularity(ratings)
+
+    recommendations: list[MLRerankedRecommendation] = []
+
+    for movie in scored_movies:
+        features = MovieFeatures(
+            personal_score=movie.personal_score,
+            quality_score=movie.quality_score,
+            popularity=popularity[movie.movie_id],
+        )
+
+        raw_features = features.as_array().reshape(1, -1)
+
+        scaled_features = ranker.scaler.transform(
+            raw_features
+        )
+
+        ml_score = float(
+            ranker.model.decision_function(
+                scaled_features
+            )[0]
+        )
+
+        recommendations.append(
+            MLRerankedRecommendation(
+                movie_id=movie.movie_id,
+                title=movie.title,
+                genres=movie.genres,
+                ml_score=ml_score,
+                personal_score=movie.personal_score,
+                quality_score=movie.quality_score,
+                popularity=popularity[movie.movie_id],
+            )
+        )
+
+    recommendations.sort(
+        key=lambda recommendation: recommendation.ml_score,
+        reverse=True,
+    )
+
+    return recommendations[:limit]

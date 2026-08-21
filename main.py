@@ -1,32 +1,33 @@
 from src.load_data import load_movielens
-from src.ml_reranker import (
-    build_training_dataset,
-    train_ranker,
-)
+from src.ml_reranker import recommend_with_ml
 
 
 def main() -> None:
     ratings, movies = load_movielens("data")
 
-    X, y, users_used = build_training_dataset(
+    user_id = 23
+
+    recommendations = recommend_with_ml(
+        user_id=user_id,
         ratings=ratings,
         movies=movies,
+        limit=5,
     )
 
-    print("Users used:", users_used)
-    print("Training examples:", len(X))
-    print("Feature matrix shape:", X.shape)
+    print(f"ML recommendations for User {user_id}:\n")
 
-    print("Positive labels:", int(y.sum()))
-    print("Negative labels:", int(len(y) - y.sum()))
-
-    ranker = train_ranker(X, y)
-
-    print()
-    print("Learned coefficients:")
-    print("Personal score:", ranker.model.coef_[0][0])
-    print("Quality score:", ranker.model.coef_[0][1])
-    print("Popularity:", ranker.model.coef_[0][2])
+    for position, movie in enumerate(
+        recommendations,
+        start=1,
+    ):
+        print(
+            f"{position}. {movie.title}\n"
+            f"   Genres: {movie.genres}\n"
+            f"   ML score: {movie.ml_score:.3f}\n"
+            f"   Personal score: {movie.personal_score:+.3f}\n"
+            f"   Quality score: {movie.quality_score:+.3f}\n"
+            f"   Popularity: {movie.popularity:.3f}\n"
+        )
 
 
 if __name__ == "__main__":
