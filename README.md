@@ -141,31 +141,25 @@ flick/
 │
 ├── src/
 │   ├── content/
-│   │   ├── baselines.py
-│   │   ├── demo.py
-│   │   ├── genres.py
-│   │   ├── README.md
-│   │   └── schemas.py
+│   ├── collaborative/
+│   ├── hybrid/
+│   ├── evaluation/
 │   ├── data_processing/
-│   │   └── movielens.py
 │   ├── models/
-│   │   └── ml_reranker.joblib
-│   ├── evaluate_ranking.py
-│   ├── explore_data.py
-│   ├── genre_recommender.py
 │   ├── load_data.py
 │   └── ml_reranker.py
 │
 ├── tests/
-│   ├── fixtures.py
-│   ├── test_baselines.py
-│   ├── test_genres.py
-│   └── test_schemas.py
+│   ├── content/
+│   ├── collaborative/
+│   ├── hybrid/
+│   └── fixtures.py
 │
 ├── main.py
 ├── requirements.txt
 └── README.md
 ```
+src/ml_reranker.py is currently kept as a compatibility shim for the serialized ML reranker model, which was originally saved using the old module path. The actual implementation lives in src/hybrid/ml_reranker.py.
 
 ## Content Model Foundation
 
