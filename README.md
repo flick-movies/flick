@@ -140,6 +140,14 @@ flick/
 │   └── ratings.csv
 │
 ├── src/
+│   ├── content/
+│   │   ├── baselines.py
+│   │   ├── demo.py
+│   │   ├── genres.py
+│   │   ├── README.md
+│   │   └── schemas.py
+│   ├── data_processing/
+│   │   └── movielens.py
 │   ├── models/
 │   │   └── ml_reranker.joblib
 │   ├── evaluate_ranking.py
@@ -148,9 +156,25 @@ flick/
 │   ├── load_data.py
 │   └── ml_reranker.py
 │
+├── tests/
+│   ├── fixtures.py
+│   ├── test_baselines.py
+│   ├── test_genres.py
+│   └── test_schemas.py
+│
 ├── main.py
 ├── requirements.txt
 └── README.md
+```
+
+## Content Model Foundation
+
+The standalone content-model foundation lives in `src/content/`. It defines typed input and output schemas, personal rating baselines and residuals, and normalized genre preference aggregation. MovieLens record conversion lives in `src/data_processing/`, and deterministic unit tests live in `tests/`.
+
+Run its tests with:
+
+```bash
+python -m unittest discover -s tests -v
 ```
 
 ### Key Files

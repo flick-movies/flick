@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 
 from src.collaborative.baseline import MovieAverageBaseline
-from src.genre_recommender import score_movies_by_genre
-from src.ml_reranker import (
+from src.hybrid.genre_recommender import score_movies_by_genre
+from src.hybrid.ml_reranker import (
     MovieFeatures,
     calculate_movie_popularity,
     chronological_split,

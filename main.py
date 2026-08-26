@@ -1,6 +1,5 @@
 from src.load_data import load_movielens
-from src.ml_reranker import recommend_with_ml
-
+from src.hybrid.ml_reranker import recommend_with_ml
 
 def main() -> None:
     ratings, movies = load_movielens("data")
