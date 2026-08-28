@@ -89,12 +89,27 @@ class ReasonSignal:
 
 
 @dataclass(frozen=True)
+class PredictionDebug:
+    baseline: float
+    movie_genres: tuple[str, ...]
+    matched_genres: tuple[str, ...]
+    unknown_genres: tuple[str, ...]
+    raw_genre_component: float
+    bounded_genre_component: float
+    genre_weight: float
+    weighted_genre_adjustment: float
+    unclamped_score: float
+    was_clamped: bool
+
+
+@dataclass(frozen=True)
 class PredictionResult:
     user_id: int
     movie_id: int
     predicted_score: float
     confidence: float
     reason_signals: tuple[ReasonSignal, ...] = field(default_factory=tuple)
+    debug: PredictionDebug | None = None
 
     def __post_init__(self) -> None:
         _validate_identifier(self.user_id, "user_id")

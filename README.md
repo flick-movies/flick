@@ -143,8 +143,12 @@ flick/
 │   ├── content/
 │   │   ├── baselines.py
 │   │   ├── demo.py
+│   │   ├── errors.py
 │   │   ├── genres.py
+│   │   ├── model.py
+│   │   ├── profiles.py
 │   │   ├── README.md
+│   │   ├── scoring.py
 │   │   └── schemas.py
 │   ├── data_processing/
 │   │   └── movielens.py
@@ -159,7 +163,10 @@ flick/
 ├── tests/
 │   ├── fixtures.py
 │   ├── test_baselines.py
+│   ├── test_content_model.py
 │   ├── test_genres.py
+│   ├── test_profiles.py
+│   ├── test_scoring.py
 │   └── test_schemas.py
 │
 ├── main.py
@@ -167,17 +174,39 @@ flick/
 └── README.md
 ```
 
-## Content Model Foundation
+## Standalone Content Model
 
-The standalone content-model foundation lives in `src/content/`. It defines typed input and output schemas, personal rating baselines and residuals, and normalized genre preference aggregation. MovieLens record conversion lives in `src/data_processing/`, and deterministic unit tests live in `tests/`.
+The standalone content model lives in `src/content/`. It builds a cached user taste profile from personal rating residuals, learns normalized genre preferences, and predicts requested movies with a bounded genre adjustment added to the user's baseline. Final scores are clamped to `0` through `5`, and optional debug output exposes every intermediate value.
+
+The batch API preserves user order and then movie order. Unknown users and movie IDs raise explicit errors, while known movies with missing or unknown genres safely fall back to the user's baseline. Candidate generation remains outside this package, so callers must supply unseen movie IDs.
+
+The standalone model is not yet connected to `main.py`, the existing heuristic recommender, or the ML reranker. Its confidence remains `0.0` and reason signals remain empty until evidence-aware confidence and explanation rules are implemented.
 
 Run its tests with:
 
 ```bash
-python -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v
+```
+
+Inspect a real MovieLens user's profile and three unseen-movie calculations with:
+
+```bash
+python3 -m src.content.demo
 ```
 
 ### Key Files
+
+`src/content/model.py`
+Provides cached profile construction, single prediction, and deterministic batch prediction.
+
+`src/content/profiles.py`
+Builds the versioned taste profile containing the user baseline, genre preferences, evidence counts, and metadata coverage.
+
+`src/content/scoring.py`
+Calculates the bounded genre component, weighted adjustment, score clamping, and optional debug values.
+
+`src/content/schemas.py`
+Defines validated model inputs, prediction outputs, reason signals, and prediction debug data.
 
 `genre_recommender.py`
 Builds personalized genre preferences, calculates movie-quality scores, applies recency/year weighting, and contains the heuristic recommendation logic.
