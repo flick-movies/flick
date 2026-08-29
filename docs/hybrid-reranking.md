@@ -27,6 +27,14 @@ Learned coefficients:
 - Quality: 1.1894
 - Popularity: 0.2172
 
+## Reproducing the benchmark
+
+Evaluation entry point:
+`python src/main.py`
+
+Evaluation mode:
+Pairwise ranking evaluation
+
 ## Purpose
 
 The hybrid recommendation system combines personalized user-taste signals with global movie-quality and popularity signals to rank movies a user is likely to prefer.
