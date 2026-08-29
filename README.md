@@ -282,6 +282,10 @@ Planned work includes:
 * scikit-learn
 * joblib
 
+## Technical Documentation
+
+Detailed documentation for Flick's recommendation algorithms, evaluation methodology, and system architecture is available in [`docs/`](docs/README.md).
+
 ## Status
 
 Flick is currently under active development.
