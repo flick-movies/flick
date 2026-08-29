@@ -263,9 +263,9 @@ Current training run:
 
 The learned coefficients from the current trained model were approximately:
 
-* Personal score: `0.3551`
-* Quality score: `1.1894`
-* Popularity: `0.2172`
+* Personal score: `0.4041`
+* Quality score: `0.8291`
+* Popularity: `0.2930`
 
 Because the features are standardized before training, these coefficients can be compared more meaningfully than coefficients learned from raw feature scales.
 
@@ -310,12 +310,14 @@ A ranking receives:
 Current evaluation results:
 
 * Users evaluated: 601
-* Test pairs: 941,248
-* Heuristic pairwise accuracy: 61.995%
-* ML pairwise accuracy: 66.950%
-* Improvement: +4.955 percentage points
+* Test pairs: 747,939
+* Movie-average baseline accuracy: 62.792%
+* Heuristic pairwise accuracy: 60.597%
+* ML pairwise accuracy: 63.926%
+* ML improvement over heuristic: +3.329 percentage points
+* ML improvement over movie-average baseline: +1.134 percentage points
 
-A random ordering would be expected to perform around 50% on pairwise comparisons, so the current ML reranker performs meaningfully above random and improves on the handcrafted heuristic.
+A random ordering would be expected to perform around 50% on pairwise comparisons. The leakage-safe ML reranker performs meaningfully above random, improves on the handcrafted heuristic, and modestly outperforms the movie-average baseline.
 
 The evaluation code now also supports comparison against a collaborative movie-average baseline.
 
