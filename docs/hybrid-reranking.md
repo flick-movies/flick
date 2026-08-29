@@ -1,40 +1,5 @@
 # Hybrid and Reranking
 
-# Week 1 Hybrid Benchmark
-
-Dataset: MovieLens 1M
-
-Evaluation split:
-- 60% training
-- 20% validation
-- 20% testing
-
-Users evaluated: 601
-Test pairs: 941,248
-
-Results:
-- Heuristic accuracy: 61.995%
-- ML reranker accuracy: 66.950%
-- Improvement: +4.955 percentage points
-
-Features:
-- Personal genre score
-- Quality score
-- Popularity score
-
-Learned coefficients:
-- Personal: 0.3551
-- Quality: 1.1894
-- Popularity: 0.2172
-
-## Reproducing the benchmark
-
-Evaluation entry point:
-`python src/main.py`
-
-Evaluation mode:
-Pairwise ranking evaluation
-
 ## Purpose
 
 The hybrid recommendation system combines personalized user-taste signals with global movie-quality and popularity signals to rank movies a user is likely to prefer.
@@ -435,3 +400,67 @@ Current demonstration entry point:
 Compatibility shim:
 
 * `src/ml_reranker.py`
+
+_________________________________________________________________________________________________________________________________________________________________
+
+# Week 1 Hybrid Benchmark
+
+Dataset: MovieLens 1M
+
+Evaluation split:
+
+* 60% profile
+* 20% pairwise training
+* 20% held-out testing
+
+## Frozen Week 1 Benchmark
+
+Users evaluated: 601
+Test pairs: 747,939
+
+Results:
+
+* Movie-average baseline accuracy: 62.792%
+* Heuristic accuracy: 60.597%
+* ML reranker accuracy: 63.926%
+* ML improvement over heuristic: +3.329 percentage points
+* ML improvement over movie-average baseline: +1.134 percentage points
+
+Training run:
+
+* Users used: 604
+* Pairwise training examples: 1,609,532
+* Positive examples: 804,766
+* Negative examples: 804,766
+
+Learned coefficients:
+
+* Personal score: 0.4041
+* Quality score: 0.8291
+* Popularity: 0.2930
+
+The benchmark was reproduced twice with identical evaluation results, and all automated tests passed before freezing.
+
+### Leakage-Safe Evaluation
+
+Population-level quality and popularity statistics exclude the target user's ratings when generating that user's training or evaluation features.
+
+This prevents the user's hidden training or test ratings from indirectly affecting the features used to predict their own preferences.
+
+Personal preference features continue to use only the user's earlier profile ratings.
+
+## Superseded Initial Benchmark
+
+An earlier evaluation produced:
+
+* Heuristic accuracy: 61.995%
+* ML reranker accuracy: 66.950%
+* Improvement: +4.955 percentage points
+* Test pairs: 941,248
+
+This result is not the official Week 1 benchmark.
+
+The initial implementation calculated population-level movie quality and popularity using the complete ratings dataset. As a result, ratings belonging to the user being evaluated could slightly influence the features used to evaluate that same user.
+
+After removing this leakage, the model was retrained and reevaluated. The leakage-safe results above are the official Week 1 benchmark.
+
