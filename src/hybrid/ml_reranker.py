@@ -31,6 +31,14 @@ class MovieFeatures:
             dtype=float,
         )
 
+def ratings_excluding_user(
+    ratings: pd.DataFrame,
+    user_id: int,
+) -> pd.DataFrame:
+    return ratings.loc[
+        ratings["userId"] != user_id
+    ]
+
 def calculate_movie_popularity(
     ratings: pd.DataFrame,
 ) -> dict[int, float]:
@@ -138,11 +146,19 @@ def build_user_training_examples(
     user_id: int,
     ratings: pd.DataFrame,
     movies: pd.DataFrame,
-    popularity: dict[int, float],
 ) -> tuple[np.ndarray, np.ndarray] | None:
     user_ratings = ratings.loc[
         ratings["userId"] == user_id
     ].copy()
+
+    reference_ratings = ratings_excluding_user(
+        ratings=ratings,
+        user_id=user_id,
+    )
+
+    popularity = calculate_movie_popularity(
+        reference_ratings
+    )
 
     if len(user_ratings) < 10:
         return None
@@ -157,7 +173,7 @@ def build_user_training_examples(
     scored_movies = score_movies_by_genre(
         user_id=user_id,
         user_history=profile,
-        reference_ratings=ratings,
+        reference_ratings=reference_ratings,
         movies=movies,
         movie_ids=train_movie_ids,
     )
@@ -194,7 +210,6 @@ def build_training_dataset(
     ratings: pd.DataFrame,
     movies: pd.DataFrame,
 ) -> tuple[np.ndarray, np.ndarray, int]:
-    popularity = calculate_movie_popularity(ratings)
 
     all_features: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
@@ -206,7 +221,6 @@ def build_training_dataset(
             user_id=int(user_id),
             ratings=ratings,
             movies=movies,
-            popularity=popularity,
         )
 
         if result is None:

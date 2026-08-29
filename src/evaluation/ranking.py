@@ -46,7 +46,6 @@ def evaluate_pairwise_accuracy(
     movies: pd.DataFrame,
 ) -> PairwiseEvaluation:
     ranker = load_ranker()
-    popularity = calculate_movie_popularity(ratings)
 
     train_ratings_list = []
     user_test_data = {}
@@ -79,10 +78,18 @@ def evaluate_pairwise_accuracy(
     for user_id, (profile, test) in user_test_data.items():
         test_movie_ids = test["movieId"].astype(int).tolist()
 
+        reference_ratings = ratings.loc[
+            ratings["userId"] != user_id
+        ]
+
+        popularity = calculate_movie_popularity(
+            reference_ratings
+        )
+
         scored_movies = score_movies_by_genre(
             user_id=user_id,
             user_history=profile,
-            reference_ratings=ratings,
+            reference_ratings=reference_ratings,
             movies=movies,
             movie_ids=test_movie_ids,
         )
