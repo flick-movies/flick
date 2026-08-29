@@ -9,6 +9,18 @@ from sklearn.preprocessing import StandardScaler
 
 from src.hybrid.genre_recommender import score_movies_by_genre
 
+@dataclass(frozen=True)
+class HybridCandidate:
+    movie_id: int
+
+    # Scores provided by upstream recommendation models
+    content_score: float
+    collaborative_score: float
+
+    # Supporting features used by the hybrid/reranking layer
+    quality_score: float
+    popularity: float
+
 @dataclass
 class TrainedRanker:
     scaler: StandardScaler
