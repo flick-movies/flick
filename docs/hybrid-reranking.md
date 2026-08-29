@@ -1,5 +1,32 @@
 # Hybrid and Reranking
 
+# Week 1 Hybrid Benchmark
+
+Dataset: MovieLens 1M
+
+Evaluation split:
+- 60% training
+- 20% validation
+- 20% testing
+
+Users evaluated: 601
+Test pairs: 941,248
+
+Results:
+- Heuristic accuracy: 61.995%
+- ML reranker accuracy: 66.950%
+- Improvement: +4.955 percentage points
+
+Features:
+- Personal genre score
+- Quality score
+- Popularity score
+
+Learned coefficients:
+- Personal: 0.3551
+- Quality: 1.1894
+- Popularity: 0.2172
+
 ## Purpose
 
 The hybrid recommendation system combines personalized user-taste signals with global movie-quality and popularity signals to rank movies a user is likely to prefer.
