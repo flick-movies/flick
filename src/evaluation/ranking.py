@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+
 from src.collaborative.baseline import MovieAverageBaseline
 from src.hybrid.genre_recommender import score_movies_by_genre
 from src.hybrid.ml_reranker import (
@@ -13,6 +14,14 @@ from src.hybrid.ml_reranker import (
     load_ranker,
 )
 
+@dataclass(frozen=True)
+class UserPairwiseResult:
+    user_id: int
+    rating_count: int
+    pairs_evaluated: int
+    baseline_accuracy: float
+    heuristic_accuracy: float
+    ml_accuracy: float
 
 @dataclass(frozen=True)
 class PairwiseEvaluation:
@@ -21,6 +30,7 @@ class PairwiseEvaluation:
     ml_accuracy: float
     users_evaluated: int
     pairs_evaluated: int
+    user_results: list[UserPairwiseResult]
 
 
 def comparison_credit(
@@ -63,7 +73,11 @@ def evaluate_pairwise_accuracy(
         train_ratings_list.append(train)
 
         if len(test) >= 2:
-            user_test_data[int(user_id)] = (profile, test)
+            user_test_data[int(user_id)] = (
+                profile,
+                test,
+                len(user_ratings),
+            )
 
     all_train_ratings = pd.concat(train_ratings_list, ignore_index=True)
 
@@ -73,9 +87,11 @@ def evaluate_pairwise_accuracy(
     heuristic_user_accuracies: list[float] = []
     ml_user_accuracies: list[float] = []
 
+    user_results: list[UserPairwiseResult] = []
+
     total_pairs = 0
 
-    for user_id, (profile, test) in user_test_data.items():
+    for user_id, (profile, test, rating_count) in user_test_data.items():
         test_movie_ids = test["movieId"].astype(int).tolist()
 
         reference_ratings = ratings.loc[
@@ -174,9 +190,24 @@ def evaluate_pairwise_accuracy(
         if user_pairs == 0:
             continue
 
-        baseline_user_accuracies.append(baseline_correct / user_pairs)
-        heuristic_user_accuracies.append(heuristic_correct / user_pairs)
-        ml_user_accuracies.append(ml_correct / user_pairs)
+        user_baseline_accuracy = baseline_correct / user_pairs
+        user_heuristic_accuracy = heuristic_correct / user_pairs
+        user_ml_accuracy = ml_correct / user_pairs
+
+        baseline_user_accuracies.append(user_baseline_accuracy)
+        heuristic_user_accuracies.append(user_heuristic_accuracy)
+        ml_user_accuracies.append(user_ml_accuracy)
+
+        user_results.append(
+            UserPairwiseResult(
+                user_id=int(user_id),
+                rating_count=rating_count,
+                pairs_evaluated=user_pairs,
+                baseline_accuracy=user_baseline_accuracy,
+                heuristic_accuracy=user_heuristic_accuracy,
+                ml_accuracy=user_ml_accuracy,
+            )
+        )
         total_pairs += user_pairs
 
     if not baseline_user_accuracies:
@@ -188,4 +219,5 @@ def evaluate_pairwise_accuracy(
         ml_accuracy=float(np.mean(ml_user_accuracies)),
         users_evaluated=len(baseline_user_accuracies),
         pairs_evaluated=total_pairs,
+        user_results=user_results
     )
