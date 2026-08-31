@@ -1,5 +1,4 @@
 # src/evaluate_ranking.py
-
 from dataclasses import dataclass
 
 import numpy as np
@@ -52,9 +51,7 @@ def evaluate_pairwise_accuracy(
     user_test_data: dict[int, tuple[pd.DataFrame, pd.DataFrame]] = {}
 
     for user_id in ratings["userId"].unique():
-        user_ratings = ratings.loc[
-            ratings["userId"] == user_id
-        ].copy()
+        user_ratings = ratings.loc[ratings["userId"] == user_id].copy()
 
         if len(user_ratings) < 10:
             train_ratings_list.append(user_ratings)
@@ -137,6 +134,14 @@ def evaluate_pairwise_accuracy(
             .to_dict()
         )
 
+        reference_ratings = ratings.loc[
+            ratings["userId"] != user_id
+        ]
+
+        popularity = calculate_movie_popularity(
+            reference_ratings
+        )
+
         scored_movies = score_movies_by_genre(
             user_id=user_id,
             user_history=profile,
@@ -147,6 +152,10 @@ def evaluate_pairwise_accuracy(
 
         if len(scored_movies) < 2:
             continue
+        baseline_preds = baseline_model.predict(
+            user_ids=[user_id] * len(test_movie_ids),
+            movie_ids=test_movie_ids,
+        ).set_index("movie_id")["predicted_score"].to_dict()
 
         movie_data = {}
 
@@ -179,18 +188,10 @@ def evaluate_pairwise_accuracy(
                 quality_score=movie.quality_score,
                 popularity=popularity[movie_id],
             )
-
             raw_features = features.as_array().reshape(1, -1)
-
-            scaled_features = ranker.scaler.transform(
-                raw_features
-            )
-
+            scaled_features = ranker.scaler.transform(raw_features)
             ml_score = float(
-                ranker.model.decision_function(
-                    scaled_features
-                )[0]
-            )
+                ranker.model.decision_function(scaled_features)[0])
 
             movie_data[movie_id] = {
                 "actual": actual_rating,
@@ -207,6 +208,8 @@ def evaluate_pairwise_accuracy(
             }
 
         movie_ids = list(movie_data.keys())
+        if len(movie_ids) < 2:
+            continue
 
         if len(movie_ids) < 2:
             continue
