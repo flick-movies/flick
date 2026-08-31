@@ -30,6 +30,42 @@ class ContentModelTests(unittest.TestCase):
 
         self.assertIs(self.model.build_profile(1), profile)
 
+    def test_unseen_movie_ids_exclude_rated_movies(self) -> None:
+        self.assertEqual(
+            self.model.unseen_movie_ids(1),
+            (5, 6, 7, 8, 9, 10),
+        )
+
+    def test_unseen_batch_is_deterministic_and_limited_per_user(self) -> None:
+        results = self.model.predict_unseen((1, 2), limit=2)
+
+        self.assertEqual(
+            tuple((result.user_id, result.movie_id) for result in results),
+            ((1, 5), (1, 6), (2, 2), (2, 5)),
+        )
+
+    def test_unseen_batch_never_returns_a_rated_movie(self) -> None:
+        rated_by_user = {
+            user_id: {
+                rating.movie_id
+                for rating in TOY_RATINGS
+                if rating.user_id == user_id
+            }
+            for user_id in (1, 2, 3)
+        }
+        results = self.model.predict_unseen((1, 2, 3))
+
+        self.assertTrue(
+            all(
+                result.movie_id not in rated_by_user[result.user_id]
+                for result in results
+            )
+        )
+
+    def test_invalid_unseen_limit_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            self.model.predict_unseen((1,), limit=-1)
+
     def test_unknown_user_is_rejected(self) -> None:
         with self.assertRaisesRegex(UnknownUserError, "Unknown user ID: 999"):
             self.model.predict((999,), (8,))

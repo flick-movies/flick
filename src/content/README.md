@@ -52,11 +52,14 @@ model = ContentModel(ratings, movies)
 profile = model.build_profile(user_id=1)
 one_result = model.predict_one(user_id=1, movie_id=8, include_debug=True)
 batch_results = model.predict(user_ids=(1, 2), movie_ids=(8, 9))
+unseen_results = model.predict_unseen(user_ids=(1, 2), limit=10)
 ```
 
 `ContentModel` caches each profile after its first build. Batch prediction returns the Cartesian product in user order and then movie order. For the example above, the order is `(1, 8)`, `(1, 9)`, `(2, 8)`, `(2, 9)`.
 
-An unknown user raises `UnknownUserError`. An unknown movie ID raises `UnknownMovieError`. A known movie with no genres receives the user's baseline because its genre adjustment is zero. Candidate generation remains outside this package, so callers are responsible for passing unseen movie IDs.
+`predict_unseen` removes every movie the user has already rated, orders the remaining movie IDs deterministically, applies the optional limit separately for each user, and returns predictions in user order. More advanced candidate retrieval remains outside this package.
+
+An unknown user raises `UnknownUserError`. An unknown movie ID raises `UnknownMovieError`. A known movie with no genres receives the user's baseline because its genre adjustment is zero.
 
 When `include_debug=True`, each result includes:
 
@@ -88,7 +91,7 @@ Run all tests from the repository root:
 python3 -m unittest discover -s tests -v
 ```
 
-The deterministic suite covers schemas, exact baselines and residuals, genre normalization, profile construction, positive and negative predictions, neutral and missing genres, multi-genre scoring, configurable weighting, score clamping, cache reuse, batch order, and unknown IDs.
+The deterministic suite covers schemas, exact baselines and residuals, genre normalization, profile construction, positive and negative predictions, neutral and missing genres, multi-genre scoring, configurable weighting, score clamping, cache reuse, batch order, unseen filtering, and unknown IDs.
 
 Inspect a real MovieLens user's profile and prediction calculations:
 

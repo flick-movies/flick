@@ -178,7 +178,7 @@ flick/
 
 The standalone content model lives in `src/content/`. It builds a cached user taste profile from personal rating residuals, learns normalized genre preferences, and predicts requested movies with a bounded genre adjustment added to the user's baseline. Final scores are clamped to `0` through `5`, and optional debug output exposes every intermediate value.
 
-The batch API preserves user order and then movie order. Unknown users and movie IDs raise explicit errors, while known movies with missing or unknown genres safely fall back to the user's baseline. Candidate generation remains outside this package, so callers must supply unseen movie IDs.
+The batch API preserves user order and then movie order. `predict_unseen` directly removes movies each user has already rated and returns deterministic unseen-movie predictions with an optional per-user limit. Unknown users and movie IDs raise explicit errors, while known movies with missing or unknown genres safely fall back to the user's baseline. More advanced candidate retrieval remains outside this package.
 
 The standalone model is not yet connected to `main.py`, the existing heuristic recommender, or the ML reranker. Its confidence remains `0.0` and reason signals remain empty until evidence-aware confidence and explanation rules are implemented.
 

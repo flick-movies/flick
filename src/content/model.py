@@ -91,3 +91,39 @@ class ContentModel:
             for user_id in ordered_user_ids
             for movie_id in ordered_movie_ids
         )
+
+    def unseen_movie_ids(self, user_id: int) -> tuple[int, ...]:
+        user_ratings = self._ratings_by_user.get(user_id)
+        if user_ratings is None:
+            raise UnknownUserError(user_id)
+
+        rated_movie_ids = {rating.movie_id for rating in user_ratings}
+        return tuple(
+            movie_id
+            for movie_id in sorted(self._movies_by_id)
+            if movie_id not in rated_movie_ids
+        )
+
+    def predict_unseen(
+        self,
+        user_ids: Sequence[int],
+        limit: int | None = None,
+        include_debug: bool = False,
+    ) -> tuple[PredictionResult, ...]:
+        if limit is not None and (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or limit < 0
+        ):
+            raise ValueError("limit must be a non-negative integer or None")
+
+        results: list[PredictionResult] = []
+        for user_id in tuple(user_ids):
+            movie_ids = self.unseen_movie_ids(user_id)
+            selected_movie_ids = movie_ids if limit is None else movie_ids[:limit]
+            results.extend(
+                self.predict_one(user_id, movie_id, include_debug)
+                for movie_id in selected_movie_ids
+            )
+
+        return tuple(results)

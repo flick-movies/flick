@@ -28,10 +28,7 @@ def main(
     movies = movie_metadata_from_records(movie_rows)
     model = ContentModel(ratings, movies)
     profile = model.build_profile(user_id)
-    watched_movie_ids = {rating.movie_id for rating in ratings}
-    candidates = tuple(
-        movie for movie in movies if movie.movie_id not in watched_movie_ids
-    )[:prediction_count]
+    movies_by_id = {movie.movie_id: movie for movie in movies}
 
     print("PROFILE")
     print(f"User: {profile.user_id}")
@@ -53,13 +50,14 @@ def main(
             f"{preference.mean_contribution:>+10.3f}"
         )
 
-    predictions = model.predict(
+    predictions = model.predict_unseen(
         (user_id,),
-        tuple(movie.movie_id for movie in candidates),
+        limit=prediction_count,
         include_debug=True,
     )
 
-    for movie, prediction in zip(candidates, predictions):
+    for prediction in predictions:
+        movie = movies_by_id[prediction.movie_id]
         debug = prediction.debug
         if debug is None:
             continue
