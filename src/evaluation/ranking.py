@@ -32,14 +32,6 @@ def comparison_credit(
     first_rating: float,
     second_rating: float,
 ) -> float:
-    """
-    Give credit for correctly ordering a pair of movies.
-
-    Returns:
-        1.0 if the predicted ordering matches the actual ordering
-        0.5 if the model predicts a tie
-        0.0 if the predicted ordering is incorrect
-    """
     actual_direction = np.sign(first_rating - second_rating)
     predicted_direction = np.sign(first_score - second_score)
 
@@ -56,15 +48,6 @@ def evaluate_pairwise_accuracy(
     ratings: pd.DataFrame,
     movies: pd.DataFrame,
 ) -> PairwiseEvaluation:
-    """
-    Evaluate four ranking approaches:
-
-        1. Movie-average baseline
-        2. heuristic (content)
-        3. ML reranker (content)
-        4. Matrix factorization (collaborative)
-    """
-
     train_ratings_list: list[pd.DataFrame] = []
     user_test_data: dict[int, tuple[pd.DataFrame, pd.DataFrame]] = {}
 
