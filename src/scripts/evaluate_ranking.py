@@ -823,6 +823,16 @@ def main() -> None:
     print_correlations(user_results)
     print_extreme_users(user_results)
     print_sanity_checks(result)
+    assert 0 <= result.matrix_factorization_accuracy <= 1
+    print("[PASS] Matrix factorization accuracy within [0, 1]")
+
+    print(f"Baseline:   {result.baseline_accuracy:.3%}")
+    print(f"Heuristic:  {result.heuristic_accuracy:.3%}")
+    print(f"ML:         {result.ml_accuracy:.3%}")
+    print(
+        f"Matrix MF:  "
+        f"{result.matrix_factorization_accuracy:.3%}"
+    )
 
 
 if __name__ == "__main__":
