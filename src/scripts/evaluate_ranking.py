@@ -781,6 +781,11 @@ def print_sanity_checks(
                 0.0 <= user_result.ml_accuracy <= 1.0
                 for user_result in user_results
             ),
+        "Matrix factorization accuracies within [0, 1]":
+            all(
+                0.0 <= user_result.matrix_factorization_accuracy <= 1.0
+                for user_result in user_results
+            ),
     }
 
     for name, passed in checks.items():
@@ -823,8 +828,6 @@ def main() -> None:
     print_correlations(user_results)
     print_extreme_users(user_results)
     print_sanity_checks(result)
-    assert 0 <= result.matrix_factorization_accuracy <= 1
-    print("[PASS] Matrix factorization accuracy within [0, 1]")
 
     print(f"Baseline:   {result.baseline_accuracy:.3%}")
     print(f"Heuristic:  {result.heuristic_accuracy:.3%}")
