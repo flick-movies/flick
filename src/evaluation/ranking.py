@@ -8,12 +8,14 @@ import pandas as pd
 from src.collaborative.baseline import MovieAverageBaseline
 from src.collaborative.matrix_factorization import BiasedMatrixFactorization
 from src.hybrid.genre_recommender import score_movies_by_genre
+from src.evaluation.splits import build_user_evaluation_split
 from src.hybrid.ml_reranker import (
     MovieFeatures,
     calculate_movie_popularity,
-    chronological_split,
     load_ranker,
 )
+
+from src.evaluation.metrics import comparison_credit
 
 @dataclass(frozen=True)
 class UserPairwiseResult:
@@ -36,23 +38,6 @@ class PairwiseEvaluation:
     user_results: list[UserPairwiseResult]
 
 
-def comparison_credit(
-    first_score: float,
-    second_score: float,
-    first_rating: float,
-    second_rating: float,
-) -> float:
-    actual_direction = np.sign(first_rating - second_rating)
-    predicted_direction = np.sign(first_score - second_score)
-
-    if predicted_direction == 0:
-        return 0.5
-
-    if predicted_direction == actual_direction:
-        return 1.0
-
-    return 0.0
-
 
 def evaluate_pairwise_accuracy(
     ratings: pd.DataFrame,
@@ -71,7 +56,7 @@ def evaluate_pairwise_accuracy(
             train_ratings_list.append(user_ratings)
             continue
 
-        profile, train, test = chronological_split(user_ratings)
+        profile, train, test = build_user_evaluation_split(user_ratings)
 
         train_ratings_list.append(profile)
         train_ratings_list.append(train)
