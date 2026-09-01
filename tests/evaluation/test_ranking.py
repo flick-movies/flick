@@ -20,6 +20,7 @@ def test_user_pairwise_result_stores_metrics():
     assert result.baseline_accuracy == 0.60
     assert result.heuristic_accuracy == 0.62
     assert result.ml_accuracy == 0.68
+    assert result.matrix_factorization_accuracy == 0.66
 
 
 def test_pairwise_evaluation_stores_user_results():
