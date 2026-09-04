@@ -11,9 +11,11 @@ The current system has two ranking stages:
 
 The final ML recommender ranks unseen movies using the learned model.
 
+Matrix factorization is currently evaluated as a separate collaborative benchmark. It is not yet used directly as an input feature to the ML reranker.
+
 ## Inputs
 
-The system currently uses MovieLens data.
+The system currently uses the MovieLens latest-small dataset.
 
 Required inputs include:
 
@@ -47,7 +49,7 @@ The ML score is a ranking score and should not be interpreted directly as a pred
 
 ## Core Idea
 
-The system first summarizes several useful signals about each movie for a particular user.
+The system summarizes several useful signals about each movie for a particular user.
 
 The current ML model uses three features:
 
@@ -188,6 +190,14 @@ This creates a balanced pairwise classification dataset.
 
 Pairs with equal ratings are skipped because there is no preference direction to learn.
 
+Before pairwise examples are generated, all eligible users are split chronologically.
+
+A global reference dataset is constructed using only profile and pairwise-training portions. Held-out evaluation ratings are excluded from this dataset for every eligible user.
+
+Population-level features such as movie quality and popularity are therefore computed without access to any held-out evaluation ratings.
+
+When constructing training examples for a particular user, that user's ratings are removed from the population reference dataset so that their pairwise-training labels cannot influence the population-level features used to predict those same preferences.
+
 ### 9. Standardize the features
 
 Before training, the feature matrix is standardized using `StandardScaler`.
@@ -254,22 +264,16 @@ The current reranker uses pairwise logistic regression.
 
 Users with fewer than 10 ratings are skipped for model training because there is not enough history for the chronological split to provide useful profile and training portions.
 
-Current training run:
+Current leakage-safe training run:
 
-* Users used: 604
-* Pairwise training examples: 1,891,468
-* Positive examples: 945,734
-* Negative examples: 945,734
+* Users used: 605
+* Pairwise training examples: 1,530,814
+* Positive examples: 765,407
+* Negative examples: 765,407
 
-The learned coefficients from the current trained model were approximately:
+The model is trained using only information available inside the global profile + training boundary. Held-out evaluation ratings are excluded from population-level feature construction.
 
-* Personal score: `0.4041`
-* Quality score: `0.8291`
-* Popularity: `0.2930`
-
-Because the features are standardized before training, these coefficients can be compared more meaningfully than coefficients learned from raw feature scales.
-
-For the current model, movie quality received the strongest learned positive coefficient.
+Because the features are standardized before training, learned logistic-regression coefficients can be compared more meaningfully than coefficients learned from raw feature scales.
 
 ## Inference
 
@@ -307,19 +311,42 @@ A ranking receives:
 * `0.0` credit if it orders the pair incorrectly
 * `0.5` credit if the model predicts a tie
 
-Current evaluation results:
+The evaluation framework compares the ML reranker against:
+
+* a Bayesian movie-average baseline
+* the handcrafted heuristic recommender
+* biased matrix factorization
+
+Current Week 2 leakage-safe evaluation:
 
 * Users evaluated: 601
-* Test pairs: 747,939
-* Movie-average baseline accuracy: 62.792%
-* Heuristic pairwise accuracy: 60.597%
-* ML pairwise accuracy: 63.926%
-* ML improvement over heuristic: +3.329 percentage points
-* ML improvement over movie-average baseline: +1.134 percentage points
+* Test pairs: 747,790
+* Movie-average baseline accuracy: 62.630%
+* Heuristic pairwise accuracy: 60.625%
+* Matrix-factorization accuracy: 62.743%
+* ML reranker accuracy: 64.024%
 
-A random ordering would be expected to perform around 50% on pairwise comparisons. The leakage-safe ML reranker performs meaningfully above random, improves on the handcrafted heuristic, and modestly outperforms the movie-average baseline.
+ML improvement:
 
-The evaluation code now also supports comparison against a collaborative movie-average baseline.
+* vs movie-average baseline: +1.393 percentage points
+* vs heuristic: +3.399 percentage points
+* vs matrix factorization: +1.280 percentage points
+
+Pair-weighted accuracy:
+
+* Movie-average baseline: 66.698%
+* Heuristic: 65.582%
+* Matrix factorization: 66.716%
+* ML reranker: 69.203%
+
+User-level bootstrap analysis:
+
+* ML minus baseline mean difference: +1.393 percentage points
+* 95% confidence interval: [+0.371, +2.406] percentage points
+
+A random ordering would be expected to perform around 50% on pairwise comparisons.
+
+The current ML reranker performs meaningfully above random, improves on the handcrafted heuristic, and modestly outperforms both the movie-average baseline and matrix factorization when evaluated independently.
 
 ## Important Hyperparameters
 
@@ -351,20 +378,21 @@ Popularity transformation:
 
 * The ML model currently uses only three features.
 * Personalization is primarily genre-based rather than learning deeper relationships between individual movies.
+* Matrix-factorization predictions are currently evaluated separately rather than being fed into the ML reranker.
 * Popularity can still introduce some bias toward widely rated movies.
 * The final ML recommendation path does not currently apply the diversity reranker.
 * The model is trained globally rather than training a separate ranker for every individual user.
 * MovieLens metadata is limited compared with production movie data.
 * Release-year similarity is represented using a manually chosen linear penalty.
 * Genre relationships are treated explicitly rather than learned automatically.
-* The saved model currently depends on a compatibility shim because it was originally serialized when the reranker lived at `src.ml_reranker`.
+* The current evaluation dataset is MovieLens latest-small, which is useful for iteration but limited in scale.
 
 ## Future Improvements
 
 Possible improvements include:
 
 * Combine content-model features with collaborative-filtering predictions.
-* Feed collaborative scores directly into the hybrid reranker.
+* Feed matrix-factorization scores directly into the hybrid reranker.
 * Add director, actor, language, runtime, keyword, and embedding-based features.
 * Add learned movie embeddings.
 * Experiment with gradient-boosted or neural ranking models.
@@ -373,7 +401,9 @@ Possible improvements include:
 * Evaluate additional ranking metrics such as NDCG, Precision@K, Recall@K, and Hit Rate.
 * Improve cold-start behavior for users with little rating history.
 * Add calibrated predicted enjoyment scores in addition to ranking scores.
-* Retrain and resave the model under the current module structure to remove the compatibility shim.
+* Increase dataset scale beyond MovieLens latest-small.
+* Investigate group recommendation and multi-user preference aggregation.
+* Investigate short-term viewing intent in addition to long-term user taste.
 
 ## Relevant Files
 
@@ -382,32 +412,39 @@ Primary implementation:
 * `src/hybrid/genre_recommender.py`
 * `src/hybrid/ml_reranker.py`
 
+Training:
+
+* `src/scripts/train_ml_reranker.py`
+
 Saved trained model:
 
 * `src/models/ml_reranker.joblib`
 
-Evaluation:
+Evaluation infrastructure:
 
 * `src/evaluation/ranking.py`
+* `src/evaluation/splits.py`
+* `src/evaluation/metrics.py`
+* `src/evaluation/reports.py`
 
 Hybrid tests:
 
 * `tests/hybrid/test_genre_recommender.py`
 * `tests/hybrid/test_ml_reranker.py`
 
+Evaluation tests:
+
+* `tests/evaluation/test_ranking.py`
+
 Current demonstration entry point:
 
 * `main.py`
 
-Compatibility shim:
+---
 
-* `src/ml_reranker.py`
+# Benchmark History
 
-_________________________________________________________________________________________________________________________________________________________________
-
-# Week 1 Hybrid Benchmark
-
-Dataset: MovieLens 1M
+Dataset: MovieLens latest-small
 
 Evaluation split:
 
@@ -415,9 +452,52 @@ Evaluation split:
 * 20% pairwise training
 * 20% held-out testing
 
+## Week 2 Leakage-Safe Benchmark
+
+Users evaluated: 601  
+Test pairs: 747,790
+
+Results:
+
+* Movie-average baseline accuracy: 62.630%
+* Heuristic accuracy: 60.625%
+* Matrix-factorization accuracy: 62.743%
+* ML reranker accuracy: 64.024%
+* ML improvement over heuristic: +3.399 percentage points
+* ML improvement over movie-average baseline: +1.393 percentage points
+* ML improvement over matrix factorization: +1.280 percentage points
+
+Pair-weighted results:
+
+* Movie-average baseline: 66.698%
+* Heuristic: 65.582%
+* Matrix factorization: 66.716%
+* ML reranker: 69.203%
+
+Training run:
+
+* Users used: 605
+* Pairwise training examples: 1,530,814
+* Positive examples: 765,407
+* Negative examples: 765,407
+
+Reliability changes introduced in Week 2:
+
+* deterministic chronological splitting
+* explicit validation of split fractions
+* deterministic tie-breaking for equal timestamps
+* tests proving complete split coverage
+* tests proving no overlap between profile, training, and test partitions
+* global held-out boundary excluding all eligible users' evaluation ratings from population-level features
+* target-user exclusion from population reference features
+* retraining under the stronger information boundary
+* evaluation sanity checks
+* pair-weighted reporting
+* bootstrap confidence intervals
+
 ## Frozen Week 1 Benchmark
 
-Users evaluated: 601
+Users evaluated: 601  
 Test pairs: 747,939
 
 Results:
@@ -435,21 +515,15 @@ Training run:
 * Positive examples: 804,766
 * Negative examples: 804,766
 
-Learned coefficients:
+The Week 1 benchmark removed direct target-user leakage.
 
-* Personal score: 0.4041
-* Quality score: 0.8291
-* Popularity: 0.2930
+Population-level movie quality and popularity statistics excluded the target user's own ratings when generating that user's features.
 
-The benchmark was reproduced twice with identical evaluation results, and all automated tests passed before freezing.
+During the Week 2 reliability audit, an additional information-boundary issue was discovered: population-level features could still use held-out ratings belonging to other users.
 
-### Leakage-Safe Evaluation
+Week 2 introduced a stronger global chronological boundary in which held-out evaluation ratings from all eligible users are excluded from population-level feature construction.
 
-Population-level quality and popularity statistics exclude the target user's ratings when generating that user's training or evaluation features.
-
-This prevents the user's hidden training or test ratings from indirectly affecting the features used to predict their own preferences.
-
-Personal preference features continue to use only the user's earlier profile ratings.
+The Week 1 benchmark remains frozen as a historical benchmark.
 
 ## Superseded Initial Benchmark
 
@@ -460,9 +534,8 @@ An earlier evaluation produced:
 * Improvement: +4.955 percentage points
 * Test pairs: 941,248
 
-This result is not the official Week 1 benchmark.
+This result is not an official benchmark.
 
-The initial implementation calculated population-level movie quality and popularity using the complete ratings dataset. As a result, ratings belonging to the user being evaluated could slightly influence the features used to evaluate that same user.
+The initial implementation calculated population-level movie quality and popularity using the complete ratings dataset. As a result, hidden ratings belonging to the user being evaluated could influence features used to evaluate that same user.
 
-After removing this leakage, the model was retrained and reevaluated. The leakage-safe results above are the official Week 1 benchmark.
-
+The evaluation pipeline was subsequently corrected and the model was retrained.

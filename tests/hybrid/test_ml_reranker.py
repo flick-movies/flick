@@ -25,8 +25,101 @@ def test_chronological_split_preserves_time_order():
     assert len(train) == 2
     assert len(test) == 2
 
-    assert profile["timestamp"].max() < train["timestamp"].min()
-    assert train["timestamp"].max() < test["timestamp"].min()
+    assert profile["timestamp"].max() <= train["timestamp"].min()
+    assert train["timestamp"].max() <= test["timestamp"].min()
+
+
+def test_chronological_split_has_no_overlap():
+    ratings = pd.DataFrame(
+        {
+            "movieId": list(range(10)),
+            "rating": [3.0] * 10,
+            "timestamp": list(range(10)),
+        }
+    )
+
+    profile, train, test = chronological_split(ratings)
+
+    profile_ids = set(profile["movieId"])
+    train_ids = set(train["movieId"])
+    test_ids = set(test["movieId"])
+
+    assert profile_ids.isdisjoint(train_ids)
+    assert profile_ids.isdisjoint(test_ids)
+    assert train_ids.isdisjoint(test_ids)
+
+
+def test_chronological_split_covers_every_rating():
+    ratings = pd.DataFrame(
+        {
+            "movieId": list(range(13)),
+            "rating": [4.0] * 13,
+            "timestamp": list(range(13)),
+        }
+    )
+
+    profile, train, test = chronological_split(ratings)
+
+    assert len(profile) + len(train) + len(test) == len(ratings)
+
+    combined_ids = set(
+        pd.concat(
+            [profile["movieId"], train["movieId"], test["movieId"]]
+        )
+    )
+
+    assert combined_ids == set(ratings["movieId"])
+
+
+@pytest.mark.parametrize(
+    ("profile_fraction", "train_fraction"),
+    [
+        (-0.1, 0.2),
+        (1.1, 0.0),
+        (0.6, -0.1),
+        (0.6, 1.1),
+        (0.8, 0.3),
+    ],
+)
+def test_chronological_split_rejects_invalid_fractions(
+    profile_fraction,
+    train_fraction,
+):
+    ratings = pd.DataFrame(
+        {
+            "movieId": [1, 2, 3],
+            "rating": [3.0, 4.0, 5.0],
+            "timestamp": [1, 2, 3],
+        }
+    )
+
+    with pytest.raises(ValueError):
+        chronological_split(
+            ratings,
+            profile_fraction=profile_fraction,
+            train_fraction=train_fraction,
+        )
+
+
+def test_chronological_split_is_deterministic_with_equal_timestamps():
+    ratings = pd.DataFrame(
+        {
+            "movieId": [9, 2, 7, 1, 5, 3, 8, 4, 6, 0],
+            "rating": [3.0] * 10,
+            "timestamp": [100] * 10,
+        }
+    )
+
+    first_profile, first_train, first_test = chronological_split(ratings)
+    second_profile, second_train, second_test = chronological_split(ratings)
+
+    assert first_profile["movieId"].tolist() == [0, 1, 2, 3, 4, 5]
+    assert first_train["movieId"].tolist() == [6, 7]
+    assert first_test["movieId"].tolist() == [8, 9]
+
+    assert first_profile.equals(second_profile)
+    assert first_train.equals(second_train)
+    assert first_test.equals(second_test)
 
 
 def test_pairwise_examples_are_balanced():

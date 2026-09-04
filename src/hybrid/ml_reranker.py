@@ -42,15 +42,7 @@ class MovieFeatures:
             ],
             dtype=float,
         )
-
-def ratings_excluding_user(
-    ratings: pd.DataFrame,
-    user_id: int,
-) -> pd.DataFrame:
-    return ratings.loc[
-        ratings["userId"] != user_id
-    ]
-
+    
 def calculate_movie_popularity(
     ratings: pd.DataFrame,
 ) -> dict[int, float]:
@@ -81,14 +73,28 @@ def chronological_split(
     profile_fraction: float = 0.60,
     train_fraction: float = 0.20,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    ordered = user_ratings.sort_values("timestamp").reset_index(drop=True)
+    if not 0.0 <= profile_fraction <= 1.0:
+        raise ValueError("profile_fraction must be between 0 and 1")
+
+    if not 0.0 <= train_fraction <= 1.0:
+        raise ValueError("train_fraction must be between 0 and 1")
+
+    if profile_fraction + train_fraction > 1.0:
+        raise ValueError(
+            "profile_fraction + train_fraction cannot exceed 1"
+        )
+
+    ordered = (
+        user_ratings
+        .sort_values(["timestamp", "movieId"], kind="stable")
+        .reset_index(drop=True)
+    )
 
     total = len(ordered)
 
-    profile_end = int(total * profile_fraction) # uses frac as the original profile
-    train_end = int(total * (profile_fraction + train_fraction)) # uses frac to train w comparisons
+    profile_end = int(total * profile_fraction)
+    train_end = int(total * (profile_fraction + train_fraction))
 
-    # uses rest to test out
     profile = ordered.iloc[:profile_end].copy()
     train = ordered.iloc[profile_end:train_end].copy()
     test = ordered.iloc[train_end:].copy()
@@ -156,59 +162,61 @@ def train_ranker(
 
 def build_user_training_examples(
     user_id: int,
-    ratings: pd.DataFrame,
+    profile_ratings: pd.DataFrame,
+    pairwise_ratings: pd.DataFrame,
+    reference_ratings: pd.DataFrame,
     movies: pd.DataFrame,
 ) -> tuple[np.ndarray, np.ndarray] | None:
-    user_ratings = ratings.loc[
-        ratings["userId"] == user_id
-    ].copy()
+    if len(pairwise_ratings) < 2:
+        return None
 
-    reference_ratings = ratings_excluding_user(
-        ratings=ratings,
-        user_id=user_id,
+    train_movie_ids = (
+        pairwise_ratings["movieId"]
+        .astype(int)
+        .tolist()
     )
 
     popularity = calculate_movie_popularity(
         reference_ratings
     )
 
-    if len(user_ratings) < 10:
-        return None
-
-    profile, train, _ = chronological_split(user_ratings)
-
-    if len(train) < 2:
-        return None
-
-    train_movie_ids = train["movieId"].astype(int).tolist()
-
     scored_movies = score_movies_by_genre(
         user_id=user_id,
-        user_history=profile,
+        user_history=profile_ratings,
         reference_ratings=reference_ratings,
         movies=movies,
         movie_ids=train_movie_ids,
     )
 
-    if len(scored_movies) < 2:
-        return None
-
     movie_features: dict[int, MovieFeatures] = {}
     actual_ratings: dict[int, float] = {}
 
     for movie in scored_movies:
-        movie_features[movie.movie_id] = MovieFeatures(
+        movie_id = movie.movie_id
+
+        if movie_id not in popularity:
+            continue
+
+        rating_rows = pairwise_ratings.loc[
+            pairwise_ratings["movieId"] == movie_id,
+            "rating",
+        ]
+
+        if rating_rows.empty:
+            continue
+
+        movie_features[movie_id] = MovieFeatures(
             personal_score=movie.personal_score,
             quality_score=movie.quality_score,
-            popularity=popularity[movie.movie_id],
+            popularity=popularity[movie_id],
         )
 
-        actual_ratings[movie.movie_id] = float(
-            train.loc[
-                train["movieId"] == movie.movie_id,
-                "rating",
-            ].iloc[0]
+        actual_ratings[movie_id] = float(
+            rating_rows.iloc[0]
         )
+
+    if len(movie_features) < 2:
+        return None
 
     if len(set(actual_ratings.values())) < 2:
         return None
@@ -218,20 +226,73 @@ def build_user_training_examples(
         actual_ratings=actual_ratings,
     )
 
+
 def build_training_dataset(
     ratings: pd.DataFrame,
     movies: pd.DataFrame,
 ) -> tuple[np.ndarray, np.ndarray, int]:
+    user_splits: dict[
+        int,
+        tuple[pd.DataFrame, pd.DataFrame],
+    ] = {}
+
+    reference_parts: list[pd.DataFrame] = []
+
+    for raw_user_id in ratings["userId"].unique():
+        user_id = int(raw_user_id)
+
+        user_ratings = ratings.loc[
+            ratings["userId"] == user_id
+        ].copy()
+
+        if len(user_ratings) < 10:
+            # These users are not used for pairwise ML training,
+            # so they have no held-out test partition here.
+            reference_parts.append(user_ratings)
+            continue
+
+        profile, train, _ = chronological_split(
+            user_ratings
+        )
+
+        user_splits[user_id] = (
+            profile,
+            train,
+        )
+
+        reference_parts.append(profile)
+        reference_parts.append(train)
+
+    if not reference_parts:
+        raise ValueError(
+            "No leakage-safe reference ratings were generated"
+        )
+
+    global_reference_ratings = pd.concat(
+        reference_parts,
+        ignore_index=True,
+    )
 
     all_features: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
 
     users_used = 0
 
-    for user_id in ratings["userId"].unique():
+    for user_id, (profile, train) in user_splits.items():
+        # Do not let this user's own pairwise-training ratings
+        # influence population-level quality/popularity features.
+        user_reference_ratings = (
+            global_reference_ratings.loc[
+                global_reference_ratings["userId"]
+                != user_id
+            ]
+        )
+
         result = build_user_training_examples(
-            user_id=int(user_id),
-            ratings=ratings,
+            user_id=user_id,
+            profile_ratings=profile,
+            pairwise_ratings=train,
+            reference_ratings=user_reference_ratings,
             movies=movies,
         )
 
@@ -242,10 +303,13 @@ def build_training_dataset(
 
         all_features.append(X_user)
         all_labels.append(y_user)
+
         users_used += 1
 
     if not all_features:
-        raise ValueError("No training examples were generated")
+        raise ValueError(
+            "No training examples were generated"
+        )
 
     X = np.vstack(all_features)
     y = np.concatenate(all_labels)
