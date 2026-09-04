@@ -12,14 +12,15 @@ def test_user_pairwise_result_stores_metrics():
         baseline_accuracy=0.60,
         heuristic_accuracy=0.62,
         ml_accuracy=0.68,
+        matrix_factorization_accuracy=0.66,
     )
-
     assert result.user_id == 23
     assert result.rating_count == 100
     assert result.pairs_evaluated == 50
     assert result.baseline_accuracy == 0.60
     assert result.heuristic_accuracy == 0.62
     assert result.ml_accuracy == 0.68
+    assert result.matrix_factorization_accuracy == 0.66
 
 
 def test_pairwise_evaluation_stores_user_results():
@@ -31,6 +32,7 @@ def test_pairwise_evaluation_stores_user_results():
             baseline_accuracy=0.60,
             heuristic_accuracy=0.55,
             ml_accuracy=0.70,
+            matrix_factorization_accuracy=0.66,
         ),
         UserPairwiseResult(
             user_id=2,
@@ -39,6 +41,7 @@ def test_pairwise_evaluation_stores_user_results():
             baseline_accuracy=0.65,
             heuristic_accuracy=0.60,
             ml_accuracy=0.75,
+            matrix_factorization_accuracy=0.66,
         ),
     ]
 
@@ -46,6 +49,7 @@ def test_pairwise_evaluation_stores_user_results():
         baseline_accuracy=0.625,
         heuristic_accuracy=0.575,
         ml_accuracy=0.725,
+        matrix_factorization_accuracy=0.660,
         users_evaluated=2,
         pairs_evaluated=50,
         user_results=user_results,
@@ -68,6 +72,7 @@ def test_pairwise_evaluation_user_count_matches_results():
             baseline_accuracy=0.50,
             heuristic_accuracy=0.60,
             ml_accuracy=0.70,
+            matrix_factorization_accuracy=0.66,
         ),
         UserPairwiseResult(
             user_id=2,
@@ -76,6 +81,7 @@ def test_pairwise_evaluation_user_count_matches_results():
             baseline_accuracy=0.55,
             heuristic_accuracy=0.65,
             ml_accuracy=0.75,
+            matrix_factorization_accuracy=0.66,
         ),
         UserPairwiseResult(
             user_id=3,
@@ -84,6 +90,7 @@ def test_pairwise_evaluation_user_count_matches_results():
             baseline_accuracy=0.60,
             heuristic_accuracy=0.70,
             ml_accuracy=0.80,
+            matrix_factorization_accuracy=0.66,
         ),
     ]
 
@@ -91,6 +98,7 @@ def test_pairwise_evaluation_user_count_matches_results():
         baseline_accuracy=0.55,
         heuristic_accuracy=0.65,
         ml_accuracy=0.75,
+        matrix_factorization_accuracy=0.660,
         users_evaluated=len(user_results),
         pairs_evaluated=50,
         user_results=user_results,
@@ -110,6 +118,7 @@ def test_pair_counts_match_user_results():
             baseline_accuracy=0.50,
             heuristic_accuracy=0.60,
             ml_accuracy=0.70,
+            matrix_factorization_accuracy=0.66
         ),
         UserPairwiseResult(
             user_id=2,
@@ -118,6 +127,7 @@ def test_pair_counts_match_user_results():
             baseline_accuracy=0.55,
             heuristic_accuracy=0.65,
             ml_accuracy=0.75,
+            matrix_factorization_accuracy=0.66
         ),
     ]
 
@@ -130,6 +140,7 @@ def test_pair_counts_match_user_results():
         baseline_accuracy=0.525,
         heuristic_accuracy=0.625,
         ml_accuracy=0.725,
+        matrix_factorization_accuracy=0.660,
         users_evaluated=2,
         pairs_evaluated=total_pairs,
         user_results=user_results,
