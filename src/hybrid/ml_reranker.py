@@ -152,7 +152,7 @@ def train_ranker(
 
     X_scaled = scaler.fit_transform(X)
 
-    model = LogisticRegression()
+    model = LogisticRegression(random_state=42)
     model.fit(X_scaled, y)
 
     return TrainedRanker(

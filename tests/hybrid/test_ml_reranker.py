@@ -2,9 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import src.hybrid.ml_reranker as ml_reranker
+
 from src.hybrid.ml_reranker import (
     MovieFeatures,
     build_pairwise_examples,
+    build_training_dataset,
     calculate_movie_popularity,
     chronological_split,
 )
@@ -121,6 +124,116 @@ def test_chronological_split_is_deterministic_with_equal_timestamps():
     assert first_train.equals(second_train)
     assert first_test.equals(second_test)
 
+def test_training_dataset_excludes_held_out_test_rows(monkeypatch):
+    ratings = pd.DataFrame(
+        {
+            "userId": ([1] * 10) + ([2] * 10),
+            "movieId": (
+                list(range(100, 110))
+                + list(range(200, 210))
+            ),
+            "rating": [3.0, 4.0, 5.0, 2.0, 4.5] * 4,
+            "timestamp": list(range(10)) + list(range(10)),
+        }
+    )
+
+    captured_references: dict[int, set[int]] = {}
+
+    def fake_build_user_training_examples(
+        user_id,
+        profile_ratings,
+        pairwise_ratings,
+        reference_ratings,
+        movies,
+    ):
+        captured_references[user_id] = set(
+            reference_ratings["movieId"].astype(int)
+        )
+
+        return (
+            np.array(
+                [
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 0.0, 0.0],
+                ]
+            ),
+            np.array([1, 0]),
+        )
+
+    monkeypatch.setattr(
+        ml_reranker,
+        "build_user_training_examples",
+        fake_build_user_training_examples,
+    )
+
+    build_training_dataset(
+        ratings=ratings,
+        movies=pd.DataFrame(),
+    )
+
+    held_out_movie_ids = {
+        108,
+        109,
+        208,
+        209,
+    }
+
+    for reference_movie_ids in captured_references.values():
+        assert reference_movie_ids.isdisjoint(
+            held_out_movie_ids
+        )
+
+def test_training_dataset_excludes_target_user_from_reference(
+    monkeypatch,
+):
+    ratings = pd.DataFrame(
+        {
+            "userId": ([1] * 10) + ([2] * 10),
+            "movieId": (
+                list(range(100, 110))
+                + list(range(200, 210))
+            ),
+            "rating": [3.0, 4.0, 5.0, 2.0, 4.5] * 4,
+            "timestamp": list(range(10)) + list(range(10)),
+        }
+    )
+
+    captured_reference_users: dict[int, set[int]] = {}
+
+    def fake_build_user_training_examples(
+        user_id,
+        profile_ratings,
+        pairwise_ratings,
+        reference_ratings,
+        movies,
+    ):
+        captured_reference_users[user_id] = set(
+            reference_ratings["userId"].astype(int)
+        )
+
+        return (
+            np.array(
+                [
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 0.0, 0.0],
+                ]
+            ),
+            np.array([1, 0]),
+        )
+
+    monkeypatch.setattr(
+        ml_reranker,
+        "build_user_training_examples",
+        fake_build_user_training_examples,
+    )
+
+    build_training_dataset(
+        ratings=ratings,
+        movies=pd.DataFrame(),
+    )
+
+    for user_id, reference_users in captured_reference_users.items():
+        assert user_id not in reference_users
 
 def test_pairwise_examples_are_balanced():
     movie_features = {

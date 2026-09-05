@@ -133,7 +133,7 @@ def evaluate_pairwise_accuracy(
             .to_dict()
         )
 
-        reference_ratings = ratings.loc[
+        reference_ratings = all_train_ratings.loc[
             ratings["userId"] != user_id
         ]
 
