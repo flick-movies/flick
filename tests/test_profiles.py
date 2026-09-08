@@ -2,19 +2,23 @@ import unittest
 
 from src.content.errors import UnknownUserError
 from src.content.profiles import PROFILE_VERSION, build_profile
+from src.content.reliability import ProfileConfig
 from src.content.schemas import UserRating
 from tests.fixtures import TOY_MOVIES, TOY_RATINGS
 
 
 class ProfileTests(unittest.TestCase):
     def test_profile_contains_baseline_preferences_and_version(self) -> None:
-        profile = build_profile(1, TOY_RATINGS, TOY_MOVIES)
+        profile = build_profile(
+            1, TOY_RATINGS, TOY_MOVIES,
+            ProfileConfig(recency_half_life_days=None),
+        )
 
         self.assertEqual(profile.user_id, 1)
         self.assertAlmostEqual(profile.baseline, 3.25)
         self.assertEqual(profile.rating_count, 4)
         self.assertEqual(profile.profile_version, PROFILE_VERSION)
-        self.assertAlmostEqual(profile.preference_for("Sci-Fi"), 0.75)
+        self.assertAlmostEqual(profile.preference_for("Sci-Fi"), 1.5 / 7)
         self.assertEqual(profile.evidence_for("Sci-Fi"), 2)
 
     def test_profile_metadata_tracks_missing_movie_and_genres(self) -> None:

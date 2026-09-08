@@ -4,6 +4,7 @@ from collections.abc import Iterable, Sequence
 
 from src.content.errors import UnknownMovieError, UnknownUserError
 from src.content.profiles import UserTasteProfile, build_profile
+from src.content.reliability import ProfileConfig
 from src.content.schemas import MovieMetadata, PredictionResult, UserRating
 from src.content.scoring import ScoringConfig, predict_one
 
@@ -14,12 +15,14 @@ class ContentModel:
         ratings: Iterable[UserRating],
         movies: Iterable[MovieMetadata],
         config: ScoringConfig | None = None,
+        profile_config: ProfileConfig | None = None,
     ) -> None:
         self._ratings = tuple(ratings)
         self._movies_by_id: dict[int, MovieMetadata] = {}
         self._ratings_by_user: dict[int, tuple[UserRating, ...]] = {}
         self._profiles: dict[int, UserTasteProfile] = {}
         self.config = config or ScoringConfig()
+        self._profile_config = profile_config or ProfileConfig()
 
         for movie in movies:
             if movie.movie_id in self._movies_by_id:
@@ -47,6 +50,7 @@ class ContentModel:
             user_id=user_id,
             ratings=user_ratings,
             movies=self._movies_by_id,
+            config=self._profile_config,
         )
         self._profiles[user_id] = profile
         return profile

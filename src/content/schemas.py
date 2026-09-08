@@ -100,6 +100,8 @@ class PredictionDebug:
     weighted_genre_adjustment: float
     unclamped_score: float
     was_clamped: bool
+    genre_support: float = 0.0
+    effective_genre_evidence: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)

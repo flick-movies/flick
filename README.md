@@ -180,7 +180,9 @@ The standalone content model lives in `src/content/`. It builds a cached user ta
 
 The batch API preserves user order and then movie order. `predict_unseen` directly removes movies each user has already rated and returns deterministic unseen-movie predictions with an optional per-user limit. Unknown users and movie IDs raise explicit errors, while known movies with missing or unknown genres safely fall back to the user's baseline. More advanced candidate retrieval remains outside this package.
 
-The standalone model is not yet connected to `main.py`, the existing heuristic recommender, or the ML reranker. Its confidence remains `0.0` and reason signals remain empty until evidence-aware confidence and explanation rules are implemented.
+Week 2 adds evidence-based regularization, configurable recency weighting that preserves older ratings, and confidence based on matching genre support. Predictions include structured genre reasons. The standalone `predict_batch(profile, movies)` API also accepts unseen movies outside the training catalog. See [the content-model specification](docs/content-model.md) for formulas, configuration, and the Week 1/2 completion checklist. Confidence measures evidence support, not calibrated prediction accuracy.
+
+The standalone model is not yet connected to `main.py`, the existing heuristic recommender, or the ML reranker.
 
 Run its tests with:
 

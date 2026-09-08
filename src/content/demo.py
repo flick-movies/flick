@@ -36,7 +36,7 @@ def main(
     print(f"Ratings: {profile.rating_count}")
     print(f"Baseline: {profile.baseline:.3f}")
     print()
-    print(f"{'Genre':<20} {'Movies':>6} {'Total':>10} {'Mean':>10}")
+    print(f"{'Genre':<20} {'Movies':>6} {'Evidence':>10} {'Mean':>10} {'Shrunk':>10}")
 
     for preference in sorted(
         profile.genre_preferences,
@@ -46,8 +46,9 @@ def main(
         print(
             f"{preference.genre:<20} "
             f"{preference.movie_count:>6} "
-            f"{preference.total_contribution:>+10.3f} "
-            f"{preference.mean_contribution:>+10.3f}"
+            f"{preference.evidence_weight:>10.3f} "
+            f"{preference.mean_contribution:>+10.3f} "
+            f"{preference.preference:>+10.3f}"
         )
 
     predictions = model.predict_unseen(
@@ -76,7 +77,9 @@ def main(
         print("FINAL SCORE")
         print(f"Baseline: {debug.baseline:.3f}")
         print(f"Unclamped: {debug.unclamped_score:.3f}")
-        print(f"Predicted: {prediction.predicted_score:.3f}")
+        print(f"User {user_id} + unseen movie {movie.movie_id} "
+              f"→ predicted {prediction.predicted_score:.3f} / 5")
+        print(f"Confidence (evidence support): {prediction.confidence:.3f}")
         print(f"Clamped: {debug.was_clamped}")
 
 

@@ -11,6 +11,7 @@ from src.content.genres import (
 )
 from src.content.errors import UnknownMovieError, UnknownUserError
 from src.content.model import ContentModel
+from src.content.reliability import ProfileConfig
 from src.content.profiles import (
     PROFILE_VERSION,
     ProfileMetadata,
@@ -23,6 +24,7 @@ from src.content.scoring import (
     ScoringConfig,
     genre_component,
     predict_one,
+    predict_batch,
 )
 from src.content.schemas import (
     MovieMetadata,
@@ -41,6 +43,7 @@ __all__ = [
     "PredictionDebug",
     "PredictionResult",
     "ProfileMetadata",
+    "ProfileConfig",
     "RatingResidual",
     "ReasonSignal",
     "ScoringConfig",
@@ -57,4 +60,5 @@ __all__ = [
     "genre_component",
     "normalized_genre_contributions",
     "predict_one",
+    "predict_batch",
 ]

@@ -2,6 +2,7 @@ import unittest
 
 from src.content.genres import GenrePreference
 from src.content.profiles import ProfileMetadata, UserTasteProfile, build_profile
+from src.content.reliability import ProfileConfig
 from src.content.schemas import MovieMetadata
 from src.content.scoring import ScoringConfig, genre_component, predict_one
 from tests.fixtures import TOY_MOVIES, TOY_MOVIES_BY_ID, TOY_RATINGS
@@ -9,7 +10,11 @@ from tests.fixtures import TOY_MOVIES, TOY_MOVIES_BY_ID, TOY_RATINGS
 
 class ScoringTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.profile = build_profile(1, TOY_RATINGS, TOY_MOVIES)
+        # Preserve the exact Week 1 arithmetic as an explicit unregularized mode.
+        self.profile = build_profile(
+            1, TOY_RATINGS, TOY_MOVIES,
+            ProfileConfig(regularization_strength=0, recency_half_life_days=None),
+        )
 
     def test_positive_scifi_movie_scores_above_baseline(self) -> None:
         result = predict_one(self.profile, TOY_MOVIES_BY_ID[8])
@@ -100,11 +105,12 @@ class ScoringTests(unittest.TestCase):
 
         self.assertIsNone(result.debug)
 
-    def test_week_one_confidence_and_reasons_are_truthfully_empty(self) -> None:
+    def test_confidence_and_reasons_expose_genre_evidence(self) -> None:
         result = predict_one(self.profile, TOY_MOVIES_BY_ID[8])
 
-        self.assertEqual(result.confidence, 0.0)
-        self.assertEqual(result.reason_signals, ())
+        self.assertAlmostEqual(result.confidence, (4 / 9) * (2 / 7))
+        self.assertEqual(result.reason_signals[0].feature_value, "Sci-Fi")
+        self.assertEqual(result.reason_signals[0].evidence_count, 2)
 
     def _extreme_profile(
         self,
