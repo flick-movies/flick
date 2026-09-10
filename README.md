@@ -123,17 +123,59 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Run the test suite:
+data/
+├── movies.csv
+└── ratings.csv
+
+
+## Standalone Content Model
+
+The standalone content model lives in `src/content/`. It builds a cached user taste profile from personal rating residuals, learns normalized genre preferences, and predicts requested movies with a bounded genre adjustment added to the user's baseline. Final scores are clamped to `0` through `5`, and optional debug output exposes every intermediate value.
+
+The batch API preserves user order and then movie order. `predict_unseen` directly removes movies each user has already rated and returns deterministic unseen-movie predictions with an optional per-user limit. Unknown users and movie IDs raise explicit errors, while known movies with missing or unknown genres safely fall back to the user's baseline. More advanced candidate retrieval remains outside this package.
+
+Week 2 adds evidence-based regularization, configurable recency weighting that preserves older ratings, and confidence based on matching genre support. Predictions include structured genre reasons. The standalone `predict_batch(profile, movies)` API also accepts unseen movies outside the training catalog. See [the content-model specification](docs/content-model.md) for formulas, configuration, and the Week 1/2 completion checklist. Confidence measures evidence support, not calibrated prediction accuracy.
+
+The standalone model is not yet connected to `main.py`, the existing heuristic recommender, or the ML reranker.
+
+Run its tests with:
 
 ```bash
-python -m pytest
+python3 -m unittest discover -s tests -v
 ```
 
-Run the current recommendation demo:
+Inspect a real MovieLens user's profile and three unseen-movie calculations with:
 
 ```bash
-python main.py
+python3 -m src.content.demo
 ```
+
+### Key Files
+
+`src/content/model.py`
+Provides cached profile construction, single prediction, and deterministic batch prediction.
+
+`src/content/profiles.py`
+Builds the versioned taste profile containing the user baseline, genre preferences, evidence counts, and metadata coverage.
+
+`src/content/scoring.py`
+Calculates the bounded genre component, weighted adjustment, score clamping, and optional debug values.
+
+`src/content/schemas.py`
+Defines validated model inputs, prediction outputs, reason signals, and prediction debug data.
+
+`genre_recommender.py`
+Builds personalized genre preferences, calculates movie-quality scores, applies recency/year weighting, and contains the heuristic recommendation logic.
+
+`ml_reranker.py`
+Builds pairwise training examples, trains the logistic-regression ranker, loads/saves the trained model, and performs learned reranking.
+
+`evaluate_ranking.py`
+Evaluates the heuristic and ML ranking systems against held-out user preferences.
+
+`main.py`
+Runs the current ML-powered recommendation pipeline for a selected MovieLens user.
+
 
 ## Project Goal
 
