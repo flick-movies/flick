@@ -9,33 +9,58 @@ from ..matrix_factorization import BiasedMatrixFactorization
 from .metrics import mae, rmse, accuracy_within
 
 
+
+def collaborative_holdout(ratings: pd.DataFrame):
+    """Per-user chronological 60/20/20; fit profile + train, hold out test."""
+    required = {"userId", "movieId", "rating", "timestamp"}
+    missing = required - set(ratings.columns)
+    if missing:
+        raise ValueError(f"ratings is missing required columns: {sorted(missing)}")
+    if ratings[list(required)].isna().any().any():
+        raise ValueError("Chronological evaluation requires nonmissing values")
+    training = []
+    heldout = {}
+    for uid, history in ratings.groupby("userId", sort=False):
+        if len(history) < 10:
+            training.append(history)
+            continue
+        ordered = history.sort_values(["timestamp", "movieId"], kind="stable")
+        profile_end = int(len(ordered) * .6)
+        train_end = int(len(ordered) * .8)
+        profile = ordered.iloc[:profile_end].copy()
+        train = ordered.iloc[profile_end:train_end].copy()
+        test = ordered.iloc[train_end:].copy()
+        training.extend([profile, train])
+        if len(test) >= 2:
+            heldout[int(uid)] = (profile, test)
+    if not training:
+        raise ValueError("No training ratings")
+    return pd.concat(training, ignore_index=True), heldout
+
+
 def evaluate_models(
     ratings: pd.DataFrame,
     test_size: float = 0.2,
     random_state: int = 42,
     return_details: bool = False,
+    split: str = "random",
 ):
-    required_columns = {"userId", "movieId", "rating"}
-
-    missing = required_columns - set(ratings.columns)
-
-    if missing:
-        raise ValueError(
-            f"ratings is missing required columns: {sorted(missing)}"
-        )
-
-    clean_ratings = ratings[
-        ["userId", "movieId", "rating"]
-    ].dropna()
-
-    if clean_ratings.empty:
-        raise ValueError("ratings cannot be empty")
-
-    train, test = train_test_split(
-        clean_ratings,
-        test_size=test_size,
-        random_state=random_state,
-    )
+    if split == "chronological":
+        if test_size != 0.2:
+            raise ValueError("Team chronological evaluation fixes the held-out fraction at 0.2")
+        train, user_test_data = collaborative_holdout(ratings)
+        if not user_test_data:
+            raise ValueError("No eligible chronological held-out users")
+        test = pd.concat([test for _, test in user_test_data.values()], ignore_index=True)
+    elif split == "random":
+        required = {"userId", "movieId", "rating"}
+        missing = required - set(ratings.columns)
+        if missing:
+            raise ValueError(f"ratings is missing required columns: {sorted(missing)}")
+        clean_ratings = ratings[["userId", "movieId", "rating"]].dropna()
+        train, test = train_test_split(clean_ratings, test_size=test_size, random_state=random_state)
+    else:
+        raise ValueError("split must be 'chronological' or 'random'")
 
     # Train both models
     baseline = MovieAverageBaseline()
