@@ -31,13 +31,17 @@ class BiasedMatrixFactorization:
         n_epochs: int = 20,
         prior_strength: float = 5.0,
         random_state: int = 42,
+        shrink_latent: bool = True,
     ):
+        if not np.isfinite(prior_strength) or prior_strength <= 0:
+            raise ValueError("prior_strength must be finite and positive")
         self.n_factors = n_factors
         self.learning_rate = learning_rate
         self.regularization = regularization
         self.n_epochs = n_epochs
         self.prior_strength = prior_strength
         self.random_state = random_state
+        self.shrink_latent = shrink_latent
 
         self.weights_: ModelWeights | None = None
         self.is_fitted_ = False
@@ -161,6 +165,11 @@ class BiasedMatrixFactorization:
                 u_conf = u_count / (u_count + self.prior_strength)
                 m_conf = m_count / (m_count + self.prior_strength)
                 confidence = u_conf * m_conf
+                # Weak evidence should not receive the full latent adjustment.
+                # Keep learned biases as the fallback; training regularizes them.
+                if getattr(self, "shrink_latent", False):
+                    interaction = np.dot(w.user_factors[u_idx], w.movie_factors[m_idx])
+                    score -= (1.0 - confidence) * interaction
 
             elif has_user:
 

@@ -1,3 +1,3 @@
-from src.collaborative.baseline import MovieAverageBaseline
+from .baseline import MovieAverageBaseline
 
 __all__ = ["MovieAverageBaseline"]
