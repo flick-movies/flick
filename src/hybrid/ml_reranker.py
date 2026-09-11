@@ -13,13 +13,21 @@ from src.hybrid.genre_recommender import score_movies_by_genre
 class HybridCandidate:
     movie_id: int
 
-    # Scores provided by upstream recommendation models
     content_score: float
     collaborative_score: float
-
-    # Supporting features used by the hybrid/reranking layer
     quality_score: float
     popularity: float
+
+    def as_array(self) -> np.ndarray:
+        return np.array(
+            [
+                self.content_score,
+                self.collaborative_score,
+                self.quality_score,
+                self.popularity,
+            ],
+            dtype=float,
+        )
 
 @dataclass
 class TrainedRanker:
@@ -160,6 +168,45 @@ def train_ranker(
         model=model,
     )
 
+def build_hybrid_pairwise_examples(
+    candidates: dict[int, HybridCandidate],
+    actual_ratings: dict[int, float],
+) -> tuple[np.ndarray, np.ndarray]:
+    feature_rows: list[np.ndarray] = []
+    labels: list[int] = []
+
+    movie_ids = list(candidates.keys())
+
+    for i in range(len(movie_ids)):
+        for j in range(i + 1, len(movie_ids)):
+            first_id = movie_ids[i]
+            second_id = movie_ids[j]
+
+            first_rating = actual_ratings[first_id]
+            second_rating = actual_ratings[second_id]
+
+            if first_rating == second_rating:
+                continue
+
+            first_features = candidates[first_id].as_array()
+            second_features = candidates[second_id].as_array()
+
+            if first_rating > second_rating:
+                difference = first_features - second_features
+            else:
+                difference = second_features - first_features
+
+            feature_rows.append(difference)
+            labels.append(1)
+
+            feature_rows.append(-difference)
+            labels.append(0)
+
+    return (
+        np.vstack(feature_rows),
+        np.array(labels, dtype=int),
+    )
+
 def build_user_training_examples(
     user_id: int,
     profile_ratings: pd.DataFrame,
@@ -226,6 +273,86 @@ def build_user_training_examples(
         actual_ratings=actual_ratings,
     )
 
+def build_user_hybrid_training_examples(
+    user_id: int,
+    profile_ratings: pd.DataFrame,
+    pairwise_ratings: pd.DataFrame,
+    reference_ratings: pd.DataFrame,
+    movies: pd.DataFrame,
+    content_model,
+    collaborative_model,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if len(pairwise_ratings) < 2:
+        return None
+
+    movie_ids = (
+        pairwise_ratings["movieId"]
+        .astype(int)
+        .tolist()
+    )
+
+    popularity = calculate_movie_popularity(
+        reference_ratings
+    )
+
+    # We still use the existing scorer for the population-level
+    # quality_score, NOT for the new content_score.
+    scored_movies = score_movies_by_genre(
+        user_id=user_id,
+        user_history=profile_ratings,
+        reference_ratings=reference_ratings,
+        movies=movies,
+        movie_ids=movie_ids,
+    )
+
+    quality_by_movie = {
+        movie.movie_id: movie.quality_score
+        for movie in scored_movies
+    }
+
+    candidates: dict[int, HybridCandidate] = {}
+    actual_ratings: dict[int, float] = {}
+
+    for movie_id in movie_ids:
+        if movie_id not in popularity:
+            continue
+
+        if movie_id not in quality_by_movie:
+            continue
+
+        rating_rows = pairwise_ratings.loc[
+            pairwise_ratings["movieId"] == movie_id,
+            "rating",
+        ]
+
+        if rating_rows.empty:
+            continue
+
+        candidate = build_hybrid_candidate(
+            user_id=user_id,
+            movie_id=movie_id,
+            content_model=content_model,
+            collaborative_model=collaborative_model,
+            quality_score=quality_by_movie[movie_id],
+            popularity=popularity[movie_id],
+        )
+
+        candidates[movie_id] = candidate
+
+        actual_ratings[movie_id] = float(
+            rating_rows.iloc[0]
+        )
+
+    if len(candidates) < 2:
+        return None
+
+    if len(set(actual_ratings.values())) < 2:
+        return None
+
+    return build_hybrid_pairwise_examples(
+        candidates=candidates,
+        actual_ratings=actual_ratings,
+    )
 
 def build_training_dataset(
     ratings: pd.DataFrame,
@@ -456,3 +583,33 @@ def recommend_with_ml(
     )
 
     return recommendations[:limit]
+
+def build_hybrid_candidate(
+    user_id: int,
+    movie_id: int,
+    content_model,
+    collaborative_model,
+    quality_score: float,
+    popularity: float,
+) -> HybridCandidate:
+    content_prediction = content_model.predict_one(
+        user_id=user_id,
+        movie_id=movie_id,
+    )
+
+    collaborative_prediction = collaborative_model.predict(
+        user_ids=[user_id],
+        movie_ids=[movie_id],
+    )
+
+    collaborative_score = float(
+        collaborative_prediction.iloc[0]["predicted_score"]
+    )
+
+    return HybridCandidate(
+        movie_id=movie_id,
+        content_score=content_prediction.predicted_score,
+        collaborative_score=collaborative_score,
+        quality_score=quality_score,
+        popularity=popularity,
+    )
