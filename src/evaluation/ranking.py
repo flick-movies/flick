@@ -144,7 +144,7 @@ def evaluate_pairwise_accuracy(
         scored_movies = score_movies_by_genre(
             user_id=user_id,
             user_history=profile,
-            reference_ratings=reference_ratings,
+            reference_ratings=all_train_ratings,
             movies=movies,
             movie_ids=test_movie_ids,
         )
