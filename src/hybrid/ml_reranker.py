@@ -8,6 +8,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from src.hybrid.genre_recommender import score_movies_by_genre
+from src.collaborative.matrix_factorization import BiasedMatrixFactorization
+from src.hybrid.content_adapter import build_content_model_from_frames
 
 @dataclass(frozen=True)
 class HybridCandidate:
@@ -436,6 +438,116 @@ def build_training_dataset(
     if not all_features:
         raise ValueError(
             "No training examples were generated"
+        )
+
+    X = np.vstack(all_features)
+    y = np.concatenate(all_labels)
+
+    return X, y, users_used
+
+def build_hybrid_training_dataset(
+    ratings: pd.DataFrame,
+    movies: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray, int]:
+
+    user_splits: dict[
+        int,
+        tuple[pd.DataFrame, pd.DataFrame],
+    ] = {}
+
+    profile_parts: list[pd.DataFrame] = []
+
+    # 1. Split users into 60 / 20 / 20
+    for raw_user_id in ratings["userId"].unique():
+        user_id = int(raw_user_id)
+
+        user_ratings = ratings.loc[
+            ratings["userId"] == user_id
+        ].copy()
+
+        if len(user_ratings) < 10:
+            continue
+
+        profile, train, _ = chronological_split(
+            user_ratings
+        )
+
+        user_splits[user_id] = (
+            profile,
+            train,
+        )
+
+        profile_parts.append(profile)
+
+    if not profile_parts:
+        raise ValueError(
+            "No profile ratings were generated"
+        )
+
+    global_profile_ratings = pd.concat(
+        profile_parts,
+        ignore_index=True,
+    )
+
+    # 2. Train collaborative model ONCE using everybody's 60%
+    collaborative_model = BiasedMatrixFactorization(
+        n_factors=20,
+        learning_rate=0.005,
+        regularization=0.02,
+        n_epochs=20,
+        prior_strength=5.0,
+        random_state=42,
+    )
+
+    collaborative_model.fit(
+        global_profile_ratings
+    )
+
+    all_features: list[np.ndarray] = []
+    all_labels: list[np.ndarray] = []
+
+    users_used = 0
+
+    # 3. Build hybrid examples for each user
+    for user_id, (profile, train) in user_splits.items():
+
+        # Population features should not use this user's own ratings.
+        other_user_reference_ratings = (
+            global_profile_ratings.loc[
+                global_profile_ratings["userId"] != user_id
+            ]
+            .copy()
+        )
+
+        # Content sees only this user's 60% profile.
+        content_model = build_content_model_from_frames(
+            profile_ratings=profile,
+            movies=movies,
+        )
+
+        result = build_user_hybrid_training_examples(
+            user_id=user_id,
+            profile_ratings=profile,
+            pairwise_ratings=train,
+            reference_ratings=other_user_reference_ratings,
+            movies=movies,
+            content_model=content_model,
+            collaborative_model=collaborative_model,
+        )
+
+        if result is None:
+            continue
+
+        X_user, y_user = result
+
+        all_features.append(X_user)
+        all_labels.append(y_user)
+
+        users_used += 1
+
+    if not all_features:
+        raise ValueError(
+            "No hybrid training examples were generated"
         )
 
     X = np.vstack(all_features)
