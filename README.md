@@ -1,12 +1,12 @@
-# Flick
+# Penumbra
 
-Flick is a personalized movie recommendation system designed to learn what individual users enjoy and rank movies accordingly.
+[Penumbra](https://penumbra.mov) is a personalized movie recommendation system designed to learn what individual users enjoy and rank movies accordingly.
 
-The project is currently focused on building and evaluating the recommendation engine that will power the future Flick application.
+The project is currently focused on building and evaluating the recommendation engine that will power the future Penumbra application.
 
 ## Recommendation System
 
-Flick's recommendation architecture is being developed around three components:
+Penumbra's recommendation architecture is being developed around three components:
 
 ### Content-Based Recommendation
 
@@ -70,7 +70,7 @@ More detailed methodology and architecture are documented in `docs/hybrid-rerank
 
 ## Current Project Status
 
-Flick is currently in the recommender-system development stage.
+Penumbra is currently in the recommender-system development stage.
 
 Current work includes:
 
@@ -113,7 +113,7 @@ docs/                 # Architecture and model documentation
 
 Current development and evaluation use the MovieLens 1M dataset.
 
-MovieLens provides approximately one million movie ratings from thousands of users and is used as an offline benchmark while Flick's recommendation system is developed.
+MovieLens provides approximately one million movie ratings from thousands of users and is used as an offline benchmark while Penumbra's recommendation system is developed.
 
 ## Development
 
@@ -179,6 +179,6 @@ Runs the current ML-powered recommendation pipeline for a selected MovieLens use
 
 ## Project Goal
 
-Flick's goal is to move beyond generic movie popularity and produce recommendations that reflect each user's individual taste.
+Penumbra's goal is to move beyond generic movie popularity and produce recommendations that reflect each user's individual taste.
 
 The current system establishes the first reproducible baseline for measuring that goal. Future model changes will be evaluated against frozen benchmarks rather than judged only by whether individual recommendations appear reasonable.
