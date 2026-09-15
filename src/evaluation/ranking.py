@@ -1,4 +1,4 @@
-# src/evaluate_ranking.py
+# src/evaluation/ranking.py
 from dataclasses import dataclass
 
 import numpy as np
@@ -9,13 +9,16 @@ from src.collaborative.baseline import MovieAverageBaseline
 from src.collaborative.matrix_factorization import BiasedMatrixFactorization
 from src.hybrid.genre_recommender import score_movies_by_genre
 from src.evaluation.splits import build_user_evaluation_split
+
+from src.evaluation.metrics import comparison_credit
+
+from src.hybrid.content_adapter import build_content_model_from_frames
 from src.hybrid.ml_reranker import (
+    HybridCandidate,
     MovieFeatures,
     calculate_movie_popularity,
     load_ranker,
 )
-
-from src.evaluation.metrics import comparison_credit
 
 @dataclass(frozen=True)
 class UserPairwiseResult:
@@ -26,6 +29,8 @@ class UserPairwiseResult:
     heuristic_accuracy: float
     ml_accuracy: float
     matrix_factorization_accuracy: float
+    content_accuracy: float = 0.0
+    hybrid_accuracy: float = 0.0
 
 @dataclass(frozen=True)
 class PairwiseEvaluation:
@@ -36,6 +41,8 @@ class PairwiseEvaluation:
     users_evaluated: int
     pairs_evaluated: int
     user_results: list[UserPairwiseResult]
+    content_accuracy: float = 0.0
+    hybrid_accuracy: float = 0.0
 
 
 
@@ -44,6 +51,7 @@ def evaluate_pairwise_accuracy(
     movies: pd.DataFrame,
 ) -> PairwiseEvaluation:
     train_ratings_list: list[pd.DataFrame] = []
+    profile_ratings_list: list[pd.DataFrame] = []
     user_test_data: dict[
         int,
         tuple[pd.DataFrame, pd.DataFrame, int],
@@ -57,6 +65,7 @@ def evaluate_pairwise_accuracy(
             continue
 
         profile, train, test = build_user_evaluation_split(user_ratings)
+        profile_ratings_list.append(profile)
 
         train_ratings_list.append(profile)
         train_ratings_list.append(train)
@@ -67,6 +76,11 @@ def evaluate_pairwise_accuracy(
                 test,
                 len(user_ratings),
             )
+
+    global_profile_ratings = pd.concat(
+        profile_ratings_list,
+        ignore_index=True,
+    )
 
     if not train_ratings_list:
         raise ValueError("No training ratings were generated")
@@ -96,7 +110,25 @@ def evaluate_pairwise_accuracy(
 
     matrix_factorization_model.fit(all_train_ratings)
 
+    hybrid_matrix_factorization_model = BiasedMatrixFactorization(
+        n_factors=20,
+        learning_rate=0.005,
+        regularization=0.02,
+        n_epochs=20,
+        prior_strength=5.0,
+        random_state=42,
+    )
+
+    hybrid_matrix_factorization_model.fit(
+        global_profile_ratings
+    )
+
     ranker = load_ranker()
+    hybrid_ranker = load_ranker(
+        path="src/models/hybrid_v1_reranker.joblib"
+    )
+    content_user_accuracies: list[float] = []
+    hybrid_user_accuracies: list[float] = []
 
     baseline_user_accuracies: list[float] = []
     heuristic_user_accuracies: list[float] = []
@@ -133,8 +165,43 @@ def evaluate_pairwise_accuracy(
             .to_dict()
         )
 
+        hybrid_mf_preds = (
+            hybrid_matrix_factorization_model.predict(
+                user_ids=[user_id] * len(test_movie_ids),
+                movie_ids=test_movie_ids,
+            )
+            .set_index("movie_id")["predicted_score"]
+            .to_dict()
+        )
+
+        content_model = build_content_model_from_frames(
+            profile_ratings=profile,
+            movies=movies,
+        )
+
+        hybrid_reference_ratings = global_profile_ratings.loc[
+            global_profile_ratings["userId"] != user_id
+        ].copy()
+
+        hybrid_popularity = calculate_movie_popularity(
+            hybrid_reference_ratings
+        )
+
+        hybrid_scored_movies = score_movies_by_genre(
+            user_id=user_id,
+            user_history=profile,
+            reference_ratings=hybrid_reference_ratings,
+            movies=movies,
+            movie_ids=test_movie_ids,
+        )
+
+        hybrid_quality = {
+            movie.movie_id: movie.quality_score
+            for movie in hybrid_scored_movies
+        }
+
         reference_ratings = all_train_ratings.loc[
-            ratings["userId"] != user_id
+            all_train_ratings["userId"] != user_id
         ]
 
         popularity = calculate_movie_popularity(
@@ -156,6 +223,14 @@ def evaluate_pairwise_accuracy(
 
         for movie in scored_movies:
             movie_id = movie.movie_id
+            if movie_id not in hybrid_mf_preds:
+                continue
+
+            if movie_id not in hybrid_quality:
+                continue
+
+            if movie_id not in hybrid_popularity:
+                continue
 
             if movie_id not in popularity:
                 continue
@@ -188,6 +263,40 @@ def evaluate_pairwise_accuracy(
             ml_score = float(
                 ranker.model.decision_function(scaled_features)[0])
 
+            content_prediction = content_model.predict_one(
+                user_id=user_id,
+                movie_id=movie_id,
+            )
+
+            content_score = float(
+                content_prediction.predicted_score
+            )
+
+            hybrid_candidate = HybridCandidate(
+                movie_id=movie_id,
+                content_score=content_score,
+                collaborative_score=float(
+                    hybrid_mf_preds[movie_id]
+                ),
+                quality_score=float(
+                    hybrid_quality[movie_id]
+                ),
+                popularity=float(
+                    hybrid_popularity[movie_id]
+                ),
+            )
+
+            hybrid_raw = hybrid_candidate.as_array().reshape(1, -1)
+            hybrid_scaled = hybrid_ranker.scaler.transform(
+                hybrid_raw
+            )
+
+            hybrid_score = float(
+                hybrid_ranker.model.decision_function(
+                    hybrid_scaled
+                )[0]
+            )
+
             movie_data[movie_id] = {
                 "actual": actual_rating,
                 "baseline": float(
@@ -200,7 +309,10 @@ def evaluate_pairwise_accuracy(
                 "matrix_factorization": float(
                     matrix_factorization_preds[movie_id]
                 ),
+                "content": content_score,
+                "hybrid": hybrid_score,
             }
+
 
         movie_ids = list(movie_data.keys())
         if len(movie_ids) < 2:
@@ -210,6 +322,8 @@ def evaluate_pairwise_accuracy(
         heuristic_correct = 0.0
         ml_correct = 0.0
         matrix_factorization_correct = 0.0
+        content_correct = 0.0
+        hybrid_correct = 0.0
 
         user_pairs = 0
 
@@ -250,6 +364,20 @@ def evaluate_pairwise_accuracy(
                     second_rating=second["actual"],
                 )
 
+                content_correct += comparison_credit(
+                    first_score=first["content"],
+                    second_score=second["content"],
+                    first_rating=first["actual"],
+                    second_rating=second["actual"],
+                )
+
+                hybrid_correct += comparison_credit(
+                    first_score=first["hybrid"],
+                    second_score=second["hybrid"],
+                    first_rating=first["actual"],
+                    second_rating=second["actual"],
+                )
+
                 user_pairs += 1
 
         if user_pairs == 0:
@@ -278,6 +406,17 @@ def evaluate_pairwise_accuracy(
             user_matrix_factorization_accuracy
         )
 
+        user_content_accuracy = content_correct / user_pairs
+        user_hybrid_accuracy = hybrid_correct / user_pairs
+
+        content_user_accuracies.append(
+            user_content_accuracy
+        )
+
+        hybrid_user_accuracies.append(
+            user_hybrid_accuracy
+        )
+
         user_results.append(
             UserPairwiseResult(
                 user_id=int(user_id),
@@ -287,6 +426,8 @@ def evaluate_pairwise_accuracy(
                 heuristic_accuracy=user_heuristic_accuracy,
                 ml_accuracy=user_ml_accuracy,
                 matrix_factorization_accuracy=user_matrix_factorization_accuracy,
+                content_accuracy=user_content_accuracy,
+                hybrid_accuracy=user_hybrid_accuracy,
             )
         )
         
@@ -296,7 +437,6 @@ def evaluate_pairwise_accuracy(
         raise ValueError(
             "No valid test pairs were generated"
         )
-
     return PairwiseEvaluation(
         baseline_accuracy=float(
             np.mean(baseline_user_accuracies)
@@ -308,13 +448,17 @@ def evaluate_pairwise_accuracy(
             np.mean(ml_user_accuracies)
         ),
         matrix_factorization_accuracy=float(
-            np.mean(
-                matrix_factorization_user_accuracies
-            )
+            np.mean(matrix_factorization_user_accuracies)
         ),
         users_evaluated=len(
             baseline_user_accuracies
         ),
         pairs_evaluated=total_pairs,
-        user_results=user_results
+        user_results=user_results,
+        content_accuracy=float(
+            np.mean(content_user_accuracies)
+        ),
+        hybrid_accuracy=float(
+            np.mean(hybrid_user_accuracies)
+        ),
     )

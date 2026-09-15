@@ -31,6 +31,30 @@ class HybridCandidate:
             dtype=float,
         )
 
+
+@dataclass(frozen=True)
+class AblationCandidate:
+    movie_id: int
+    collaborative_score: float
+    personal_score: float
+    content_score: float
+    quality_score: float
+    popularity: float
+
+    def as_array(self, features: list[str]) -> np.ndarray:
+        values = {
+            "collaborative": self.collaborative_score,
+            "personal": self.personal_score,
+            "content": self.content_score,
+            "quality": self.quality_score,
+            "popularity": self.popularity,
+        }
+
+        return np.array(
+            [values[feature] for feature in features],
+            dtype=float,
+        )
+
 @dataclass
 class TrainedRanker:
     scaler: StandardScaler
@@ -209,6 +233,53 @@ def build_hybrid_pairwise_examples(
         np.array(labels, dtype=int),
     )
 
+
+def build_ablation_pairwise_examples(
+    candidates: dict[int, AblationCandidate],
+    actual_ratings: dict[int, float],
+    features: list[str],
+) -> tuple[np.ndarray, np.ndarray]:
+    feature_rows = []
+    labels = []
+
+    movie_ids = list(candidates.keys())
+
+    for i in range(len(movie_ids)):
+        for j in range(i + 1, len(movie_ids)):
+            first_id = movie_ids[i]
+            second_id = movie_ids[j]
+
+            first_rating = actual_ratings[first_id]
+            second_rating = actual_ratings[second_id]
+
+            if first_rating == second_rating:
+                continue
+
+            first_features = candidates[first_id].as_array(features)
+            second_features = candidates[second_id].as_array(features)
+
+            if first_rating > second_rating:
+                difference = first_features - second_features
+            else:
+                difference = second_features - first_features
+
+            feature_rows.append(difference)
+            labels.append(1)
+
+            feature_rows.append(-difference)
+            labels.append(0)
+
+    if not feature_rows:
+        return (
+            np.empty((0, len(features)), dtype=float),
+            np.empty((0,), dtype=int),
+        )
+
+    return (
+        np.vstack(feature_rows),
+        np.array(labels, dtype=int),
+    )
+
 def build_user_training_examples(
     user_id: int,
     profile_ratings: pd.DataFrame,
@@ -354,6 +425,87 @@ def build_user_hybrid_training_examples(
     return build_hybrid_pairwise_examples(
         candidates=candidates,
         actual_ratings=actual_ratings,
+    )
+
+def build_user_ablation_training_examples(
+    user_id: int,
+    profile_ratings: pd.DataFrame,
+    pairwise_ratings: pd.DataFrame,
+    reference_ratings: pd.DataFrame,
+    movies: pd.DataFrame,
+    content_model,
+    collaborative_model,
+    features: list[str],
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if len(pairwise_ratings) < 2:
+        return None
+
+    movie_ids = pairwise_ratings["movieId"].astype(int).tolist()
+
+    popularity = calculate_movie_popularity(reference_ratings)
+
+    scored_movies = score_movies_by_genre(
+        user_id=user_id,
+        user_history=profile_ratings,
+        reference_ratings=reference_ratings,
+        movies=movies,
+        movie_ids=movie_ids,
+    )
+
+    personal_by_movie = {
+        movie.movie_id: movie.personal_score
+        for movie in scored_movies
+    }
+
+    quality_by_movie = {
+        movie.movie_id: movie.quality_score
+        for movie in scored_movies
+    }
+
+    candidates = {}
+    actual_ratings = {}
+
+    for movie_id in movie_ids:
+        if movie_id not in popularity:
+            continue
+
+        if movie_id not in personal_by_movie:
+            continue
+
+        if movie_id not in quality_by_movie:
+            continue
+
+        rating_rows = pairwise_ratings.loc[
+            pairwise_ratings["movieId"] == movie_id,
+            "rating",
+        ]
+
+        if rating_rows.empty:
+            continue
+
+        candidate = build_ablation_candidate(
+            user_id=user_id,
+            movie_id=movie_id,
+            content_model=content_model,
+            collaborative_model=collaborative_model,
+            personal_score=personal_by_movie[movie_id],
+            quality_score=quality_by_movie[movie_id],
+            popularity=popularity[movie_id],
+        )
+
+        candidates[movie_id] = candidate
+        actual_ratings[movie_id] = float(rating_rows.iloc[0])
+
+    if len(candidates) < 2:
+        return None
+
+    if len(set(actual_ratings.values())) < 2:
+        return None
+
+    return build_ablation_pairwise_examples(
+        candidates=candidates,
+        actual_ratings=actual_ratings,
+        features=features,
     )
 
 def build_training_dataset(
@@ -555,6 +707,99 @@ def build_hybrid_training_dataset(
 
     return X, y, users_used
 
+def build_ablation_training_dataset(
+    ratings: pd.DataFrame,
+    movies: pd.DataFrame,
+    features: list[str],
+) -> tuple[np.ndarray, np.ndarray, int]:
+    user_splits: dict[
+        int,
+        tuple[pd.DataFrame, pd.DataFrame],
+    ] = {}
+
+    profile_parts: list[pd.DataFrame] = []
+
+    for raw_user_id in ratings["userId"].unique():
+        user_id = int(raw_user_id)
+
+        user_ratings = ratings.loc[
+            ratings["userId"] == user_id
+        ].copy()
+
+        if len(user_ratings) < 10:
+            continue
+
+        profile, train, _ = chronological_split(user_ratings)
+
+        user_splits[user_id] = (profile, train)
+        profile_parts.append(profile)
+
+    if not profile_parts:
+        raise ValueError("No profile ratings were generated")
+
+    global_profile_ratings = pd.concat(
+        profile_parts,
+        ignore_index=True,
+    )
+
+    collaborative_model = BiasedMatrixFactorization(
+        n_factors=20,
+        learning_rate=0.005,
+        regularization=0.02,
+        n_epochs=20,
+        prior_strength=5.0,
+        random_state=42,
+    )
+
+    collaborative_model.fit(global_profile_ratings)
+
+    all_features = []
+    all_labels = []
+    users_used = 0
+
+    for user_id, (profile, train) in user_splits.items():
+        reference_ratings = global_profile_ratings.loc[
+            global_profile_ratings["userId"] != user_id
+        ].copy()
+
+        content_model = build_content_model_from_frames(
+            profile_ratings=profile,
+            movies=movies,
+        )
+
+        result = build_user_ablation_training_examples(
+            user_id=user_id,
+            profile_ratings=profile,
+            pairwise_ratings=train,
+            reference_ratings=reference_ratings,
+            movies=movies,
+            content_model=content_model,
+            collaborative_model=collaborative_model,
+            features=features,
+        )
+
+        if result is None:
+            continue
+
+        X_user, y_user = result
+
+        if len(y_user) == 0:
+            continue
+
+        all_features.append(X_user)
+        all_labels.append(y_user)
+        users_used += 1
+
+    if not all_features:
+        raise ValueError(
+            "No ablation training examples were generated"
+        )
+
+    X = np.vstack(all_features)
+    y = np.concatenate(all_labels)
+
+    return X, y, users_used
+
 def score_with_ranker(
     features: MovieFeatures,
     ranker: TrainedRanker,
@@ -722,6 +967,38 @@ def build_hybrid_candidate(
         movie_id=movie_id,
         content_score=content_prediction.predicted_score,
         collaborative_score=collaborative_score,
+        quality_score=quality_score,
+        popularity=popularity,
+    )
+
+def build_ablation_candidate(
+    user_id: int,
+    movie_id: int,
+    content_model,
+    collaborative_model,
+    personal_score: float,
+    quality_score: float,
+    popularity: float,
+) -> AblationCandidate:
+    content_prediction = content_model.predict_one(
+        user_id=user_id,
+        movie_id=movie_id,
+    )
+
+    collaborative_prediction = collaborative_model.predict(
+        user_ids=[user_id],
+        movie_ids=[movie_id],
+    )
+
+    collaborative_score = float(
+        collaborative_prediction.iloc[0]["predicted_score"]
+    )
+
+    return AblationCandidate(
+        movie_id=movie_id,
+        collaborative_score=collaborative_score,
+        personal_score=personal_score,
+        content_score=content_prediction.predicted_score,
         quality_score=quality_score,
         popularity=popularity,
     )
